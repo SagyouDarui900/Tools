@@ -1,0 +1,1409 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ツール集 - Web Tools for Developers & Creators</title>
+    <meta name="description" content="完全オフライン・ブラウザ完結型のWebツール集（REAPERパス編集、文字化けシミュレータ＆復元、URLエンコード/デコード、特殊文字変換、文字数カウンター、Markdownエディタ、スプライト抽出等）">
+    <meta property="og:title" content="ツール集 - Web Tools for Developers & Creators">
+    <meta property="og:description" content="完全オフライン・ブラウザ完結型のWebツール集（REAPERパス編集、文字化けシミュレータ＆復元、URLエンコード/デコード、特殊文字変換、文字数カウンター、Markdownエディタ、スプライト抽出等）">
+    <meta property="og:type" content="website">
+    <meta name="robots" content="noindex, nofollow">
+    <meta name="theme-color" content="#121216">
+    <link rel="manifest" href="./manifest.json">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%231a1a22'/><text x='50' y='68' font-size='55' text-anchor='middle'>🛠️</text></svg>">
+    <!-- JSZip (Zip一括保存用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <!-- PDF.js (PDF画像抽出用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Marked.js (Markdown変換・リアルタイムプレビュー用) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+    <link rel="stylesheet" href="/src/index.css">
+</head>
+<body class="theme-dark">
+
+    <!-- HEADER -->
+    <header>
+        <div class="logo-group">
+            <button id="sidebarToggleBtn" class="btn" style="padding: 4px 9px; font-size: 15px; display: inline-flex; align-items: center; justify-content: center; cursor: pointer;" title="メニュー開閉・ワイド表示切替 (Alt+M / [ )">☰</button>
+            <span class="app-title">ツール集</span>
+        </div>
+        <div class="header-controls">
+            <button id="themeToggleBtn" class="btn" title="ダーク / ライト テーマ切り替え">
+                <span id="themeLabel">テーマ切替 (ダーク)</span>
+            </button>
+        </div>
+    </header>
+
+    <!-- SIDEBAR BACKDROP FOR MOBILE -->
+    <div id="sidebarBackdrop" class="sidebar-backdrop"></div>
+
+    <!-- APP LAYOUT -->
+    <div id="app-layout">
+
+        <!-- SIDEBAR -->
+        <aside id="sidebar">
+            <div class="sidebar-mobile-header">
+                <span style="font-weight: 700; font-size: 13px; color: var(--text-heading);">ツールメニュー</span>
+                <button id="sidebarCloseBtn" class="btn" style="padding: 4px 10px; font-size: 13px;" title="メニューを閉じる">✕ 閉じる</button>
+            </div>
+            <div class="nav-section-title">テキスト・文字列処理</div>
+            <button class="nav-btn" data-target="view-unicode-font">特殊文字・フォント変換 (Unicode)</button>
+            <button class="nav-btn" data-target="view-text-counter">文字数カウンター (大学レポート)</button>
+            <button class="nav-btn" data-target="view-markdown-editor">Markdown作成 (リアルタイム)</button>
+            <button class="nav-btn" data-target="view-mojibake">文字化けシミュレータ＆復元</button>
+            <button class="nav-btn" data-target="view-url-codec">日本語URLエンコード / デコード</button>
+            <button class="nav-btn" data-target="view-pdf-tools">PDF画像抽出・変換</button>
+            <button class="nav-btn" data-target="view-1byte-font">1バイトフォントコード変換</button>
+            <button class="nav-btn" data-target="view-romaji-kana">ローマ字かな変換</button>
+
+            <div class="nav-section-title">DAW・音楽制作</div>
+            <button class="nav-btn" data-target="view-reaper-path">REAPER プロジェクトパス編集 (.rpp)</button>
+            <button class="nav-btn active" data-target="view-phoneme-db">音素データベース解析</button>
+            <button class="nav-btn" data-target="view-spectrogram">スペクトログラム音声生成</button>
+
+            <div class="nav-section-title">グラフィック・素材処理</div>
+            <button class="nav-btn" data-target="view-sprite-cutter">スプライトシート切り出し</button>
+            <button class="nav-btn" data-target="view-img-converter">画像形式一括変換</button>
+            <button class="nav-btn" data-target="view-png-crop">透過画像余白自動削減</button>
+            <button class="nav-btn" data-target="view-chroma-key">クロマキー背景透過</button>
+            <button class="nav-btn" data-target="view-svg-crop">SVG余白トリミング</button>
+        </aside>
+
+        <!-- MAIN WORKSPACE -->
+        <main id="workspace">
+
+            <!-- ==========================================================================
+                 TOOL 1: 音素データベース解析
+                 ========================================================================== -->
+            <section id="view-phoneme-db" class="tool-view active">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">音素データベース解析 (JSONデータ分析・五十音表示・ピッチ分布)</span>
+                        <button id="pdbResetBtn" class="btn btn-danger hidden">データ初期化</button>
+                    </div>
+
+                    <!-- DROP ZONE -->
+                    <div id="pdbDropZone" class="drop-zone mb-4">
+                        <input type="file" id="pdbFileInput" accept=".json" multiple>
+                        <div style="font-weight: 700; font-size: 13px;">音素DBのJSONファイルをドロップ、または選択</div>
+                        <div style="color: var(--text-muted); font-size: 11px; margin-top: 4px;">1つのJSONファイルが1つのキャラクター音素DBに対応します (複数同時読み込み可)</div>
+                    </div>
+
+                    <!-- CHARACTER SELECTOR (1JSON = 1キャラクター) -->
+                    <div id="pdbCharSelectGroup" class="panel hidden" style="margin-bottom: 14px; background-color: var(--bg-panel-secondary); padding: 10px 14px;">
+                        <div style="display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex: 1; min-width: 240px;">
+                                <label style="margin: 0; white-space: nowrap; font-weight: 700; color: var(--text-heading);">解析対象キャラクター (JSON):</label>
+                                <select id="pdbCharSelect" style="flex: 1; font-weight: 600; padding: 6px;"></select>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 8px;">
+                                <button id="pdbDownloadJsonBtn" class="btn btn-primary" style="padding: 6px 12px; font-size: 11px;">編集済みJSONを保存</button>
+                                <div id="pdbCharCountChip" class="chip" style="font-size: 11px;">1 キャラクター読み込み済み</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- STATS SUMMARY -->
+                    <div id="pdbStatsSummary" class="form-grid hidden" style="margin-bottom: 14px;">
+                        <div class="panel" style="margin: 0; padding: 10px;">
+                            <label>総楽曲数</label>
+                            <div id="pdbStatSongs" style="font-size: 18px; font-weight: 700; color: var(--accent-primary);">0</div>
+                        </div>
+                        <div class="panel" style="margin: 0; padding: 10px;">
+                            <label>総音素数</label>
+                            <div id="pdbStatPhonemes" style="font-size: 18px; font-weight: 700; color: var(--accent-green);">0</div>
+                        </div>
+                        <div class="panel" style="margin: 0; padding: 10px;">
+                            <label>登録音素種類</label>
+                            <div id="pdbStatUnique" style="font-size: 18px; font-weight: 700; color: var(--accent-purple);">0 種類</div>
+                        </div>
+                    </div>
+
+                    <!-- TAB CONTENTS -->
+                    <div id="pdbMainContent" class="hidden">
+                        <div style="display: flex; gap: 6px; border-bottom: 2px solid var(--border-color); margin-bottom: 14px;">
+                            <button class="btn pdb-tab-btn btn-primary" data-tab="pdb-tab-gojuon">五十音カバレッジ</button>
+                            <button class="btn pdb-tab-btn" data-tab="pdb-tab-pitch">音域ピッチ分布</button>
+                            <button class="btn pdb-tab-btn" data-tab="pdb-tab-songs">登録楽曲一覧</button>
+                        </div>
+
+                        <!-- 1. 五十音 -->
+                        <div id="pdb-tab-gojuon" class="pdb-tab-content">
+                            <div id="pdbGojuonContainer" style="display: flex; flex-wrap: wrap; gap: 14px; direction: rtl; margin-bottom: 16px;">
+                                <!-- Gojuon matrices populated dynamically -->
+                            </div>
+                            <label>特殊音・その他収録音素</label>
+                            <div id="pdbOtherPhonemes" style="display: flex; flex-wrap: wrap; gap: 6px;"></div>
+                        </div>
+
+                        <!-- 2. ピッチグラフ (自作Canvas) -->
+                        <div id="pdb-tab-pitch" class="pdb-tab-content hidden">
+                            <div class="grid-2">
+                                <div>
+                                    <label>音域ピッチ分布グラフ</label>
+                                    <div style="background-color: var(--bg-panel-secondary); border: 1px solid var(--border-color); padding: 8px;">
+                                        <canvas id="pdbPitchCanvas" width="550" height="300" style="width: 100%; height: 300px; display: block;"></canvas>
+                                    </div>
+                                </div>
+                                <div class="panel" style="margin: 0;">
+                                    <label>音域統計データ</label>
+                                    <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 10px;">
+                                        <div>
+                                            <label>最低音</label>
+                                            <div id="pdbStatLowest" style="font-size: 16px; font-weight: 700; color: var(--accent-primary);">-</div>
+                                        </div>
+                                        <div>
+                                            <label>最高音</label>
+                                            <div id="pdbStatHighest" style="font-size: 16px; font-weight: 700; color: var(--accent-purple);">-</div>
+                                        </div>
+                                        <div>
+                                            <label>最多ピッチ</label>
+                                            <div id="pdbStatMost" style="font-size: 16px; font-weight: 700; color: var(--accent-green);">-</div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 3. 楽曲リスト -->
+                        <div id="pdb-tab-songs" class="pdb-tab-content hidden">
+                            <div id="pdbSongCards" class="grid-2"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 2: スペクトログラム音声生成
+                 ========================================================================== -->
+            <section id="view-spectrogram" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">スペクトログラム音声生成 (画像から直接音画WAVを作成)</span>
+                    </div>
+
+                    <div class="grid-2">
+                        <!-- LEFT: Input & Settings -->
+                        <div>
+                            <div id="specDropZone" class="drop-zone mb-4">
+                                <input type="file" id="specFileInput" accept="image/*">
+                                <div style="font-weight: 700;">画像をドロップ、または選択</div>
+                                <div style="color: var(--text-muted); font-size: 11px; margin-top: 2px;">白黒・高コントラスト画像から周波数成分を抽出しWAV音声を合成します</div>
+                            </div>
+
+                            <div class="form-grid">
+                                <div>
+                                    <label>再生時間 (秒)</label>
+                                    <input type="number" id="specDuration" value="5" min="1" max="30">
+                                </div>
+                                <div>
+                                    <label>解像度 (分割数)</label>
+                                    <select id="specResolution">
+                                        <option value="128">128 (高速)</option>
+                                        <option value="256" selected>256 (標準)</option>
+                                        <option value="512">512 (高精細)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label>最低周波数 (Hz)</label>
+                                    <input type="number" id="specMinFreq" value="100" min="20" max="10000">
+                                </div>
+                                <div>
+                                    <label>最高周波数 (Hz)</label>
+                                    <input type="number" id="specMaxFreq" value="18000" min="1000" max="22050">
+                                </div>
+                                <div>
+                                    <label>周波数スケール</label>
+                                    <select id="specScale">
+                                        <option value="linear" selected>リニア (線形)</option>
+                                        <option value="log">ログ (対数)</option>
+                                    </select>
+                                </div>
+                                <div>
+                                    <label>コントラスト</label>
+                                    <input type="number" id="specContrast" value="1.5" min="0.5" max="3.0" step="0.1">
+                                </div>
+                            </div>
+
+                            <button id="specGenerateBtn" disabled class="btn btn-primary" style="width: 100%; padding: 10px;">
+                                音声 (WAV) を生成
+                            </button>
+                        </div>
+
+                        <!-- RIGHT: Preview & WAV Output -->
+                        <div>
+                            <label>画像プレビュー</label>
+                            <div class="checkerboard" style="border: 1px solid var(--border-color); height: 180px; display: flex; align-items: center; justify-content: center; margin-bottom: 12px; overflow: hidden;">
+                                <canvas id="specCanvas" class="hidden" style="max-width: 100%; max-height: 100%; object-fit: contain;"></canvas>
+                                <span id="specPlaceholder" style="color: var(--text-muted);">画像未選択</span>
+                            </div>
+
+                            <div id="specProgressSection" class="hidden">
+                                <div class="flex-between" style="font-size: 11px;">
+                                    <span id="specStatusText">音声波形を合成中...</span>
+                                    <span id="specProgressPercent">0%</span>
+                                </div>
+                                <div class="progress-bar-container">
+                                    <div id="specProgressBar" class="progress-bar-fill"></div>
+                                </div>
+                            </div>
+
+                            <div id="specAudioSection" class="hidden panel" style="background-color: var(--bg-panel-secondary); margin: 0;">
+                                <audio id="specAudioPlayer" controls style="width: 100%; margin-bottom: 8px;"></audio>
+                                <a id="specDownloadBtn" href="#" download="spectrogram-art.wav" class="btn btn-primary" style="width: 100%; text-align: center; cursor: grab;" draggable="true">
+                                    WAVファイルの保存 (DAWへの直接ドラッグ可能)
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 3: スプライトシート切り出し (レスポンシブ・背景色透過対応強化版)
+                 ========================================================================== -->
+            <section id="view-sprite-cutter" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">スプライトシート切り出し (輪郭自動抽出・背景色指定透過・ドラッグ領域選択)</span>
+                        <span class="chip" id="spriteCountBadge">0 個選択中</span>
+                    </div>
+
+                    <div class="grid-2 mb-4">
+                        <div id="spriteDropZone" class="drop-zone">
+                            <input type="file" id="spriteFileInput" accept="image/*">
+                            <div style="font-weight: 700;">スプライトシート画像をドロップ、または選択</div>
+                        </div>
+                        <div class="panel" style="margin: 0; background-color: var(--bg-panel-secondary);">
+                            <label>切り出し処理・背景指定設定</label>
+                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                <label style="margin: 0; white-space: nowrap;">背景除去方法:</label>
+                                <select id="spriteBgMode" style="flex: 1;">
+                                    <option value="alpha">アルファ透明（すでに透明背景）</option>
+                                    <option value="color">指定単色背景（背景が白・黒・緑など）</option>
+                                </select>
+                            </div>
+
+                            <div id="spriteBgColorGroup" class="hidden" style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px;">
+                                <label style="margin: 0; white-space: nowrap;">背景色指定:</label>
+                                <input type="color" id="spriteBgColorPicker" value="#FFFFFF" style="width: 36px; height: 28px; border: none; cursor: pointer;">
+                                <input type="text" id="spriteBgColorText" value="#FFFFFF" style="width: 80px; font-family: monospace;">
+                                <button id="spriteBgPipetteBtn" class="btn">スポイト</button>
+                                <label style="margin: 0; white-space: nowrap; margin-left: 8px;">許容値:</label>
+                                <input type="number" id="spriteBgTol" value="15" min="0" max="100" style="width: 50px;">
+                            </div>
+
+                            <!-- DRAG SELECTION MODE -->
+                            <div style="display: flex; gap: 8px; align-items: center; margin-bottom: 8px; flex-wrap: wrap;">
+                                <label style="margin: 0; white-space: nowrap; font-weight: 600;">ドラッグ領域選択:</label>
+                                <select id="spriteDragMode" style="flex: 1; font-size: 11.5px; padding: 3px 6px;">
+                                    <option value="fit" selected>枠内のオブジェクトに自動吸着フィット (火・光・複数パーツを1つに統合)</option>
+                                    <option value="exact">ドラッグ枠のまま切り出し (固定サイズ・手動指定枠)</option>
+                                </select>
+                                <label style="margin: 0; white-space: nowrap; font-size: 11px;">吸着余白:</label>
+                                <input type="number" id="spriteFitPadding" value="0" min="0" max="10" style="width: 44px; padding: 2px 4px; font-size: 11px;" title="吸着時に四方に加える余白ピクセル">
+                                <span style="font-size: 11px; color: var(--text-muted);">px</span>
+                            </div>
+
+                            <div style="display: flex; gap: 6px; align-items: center;">
+                                <label style="margin: 0;">キャンバス背景表示:</label>
+                                <button class="btn sprite-bg-btn active" data-bg="checker">市松模様</button>
+                                <button class="btn sprite-bg-btn" data-bg="#000000">黒</button>
+                                <button class="btn sprite-bg-btn" data-bg="#ffffff">白</button>
+                                <button class="btn sprite-bg-btn" data-bg="#ff00ff">マゼンタ</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid-2">
+                        <!-- CANVASED WORKSPACE -->
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="margin: 0;">編集キャンバス (クリックで単一抽出 / ドラッグで範囲指定)</label>
+                                <span style="font-size: 11px; color: var(--text-muted);">Ctrl+Z で直前の選択を取り消し</span>
+                            </div>
+                            <div id="spriteCanvasContainer" class="checkerboard" style="border: 1px solid var(--border-color); position: relative; overflow: auto; max-height: 480px; display: flex; justify-content: center; align-items: center; background-color: var(--bg-panel-secondary); border-radius: 4px;">
+                                <div style="position: relative; display: inline-block;" id="spriteCanvasWrapper">
+                                    <canvas id="spriteImgCanvas" style="display: block; max-width: 100%; height: auto;"></canvas>
+                                    <canvas id="spriteOverlayCanvas" style="position: absolute; top:0; left:0; width: 100%; height: 100%; cursor: crosshair;"></canvas>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- EXTRACTED LIST -->
+                        <div>
+                            <div class="flex-between mb-2">
+                                <div>
+                                    <label style="margin: 0;">抽出スプライト (連番アニメーション順)</label>
+                                    <span style="font-size: 10.5px; color: var(--text-muted); display: block;">▲▼ボタンまたはドラッグ＆ドロップで順番入れ替え可能</span>
+                                </div>
+                                <div style="display: flex; gap: 4px; align-items: center;">
+                                    <button id="spriteSortOrderBtn" class="btn" style="padding: 2px 7px; font-size: 11px;" title="配置位置（上→下、左→右の読み順）で自動整列">自動整列</button>
+                                    <button id="spriteReverseBtn" class="btn" style="padding: 2px 7px; font-size: 11px;" title="現在の並び順を逆順に反転">反転</button>
+                                    <button id="spriteClearAllBtn" class="btn btn-danger" style="padding: 2px 7px; font-size: 11px;">全削除</button>
+                                </div>
+                            </div>
+                            <div id="spriteListContainer" style="border: 1px solid var(--border-color); background-color: var(--bg-panel-secondary); height: 260px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px; border-radius: 4px;">
+                                <!-- Items dynamically inserted with drag handles & up/down buttons -->
+                            </div>
+
+                            <!-- ANIMATION PREVIEW PLAYER -->
+                            <div id="spriteAnimPreviewBox" style="margin-top: 8px; padding: 8px 10px; border: 1px solid var(--border-color); background-color: var(--bg-panel); border-radius: 4px;">
+                                <div class="flex-between" style="margin-bottom: 6px;">
+                                    <span style="font-size: 11px; font-weight: 700; color: var(--text-heading);">連番アニメーション プレビュー</span>
+                                    <div style="display: flex; align-items: center; gap: 6px;">
+                                        <button id="spriteAnimPlayBtn" class="btn btn-primary" style="padding: 2px 9px; font-size: 11px; min-width: 60px;">▶ 再生</button>
+                                        <label style="font-size: 11px; margin: 0; white-space: nowrap;">速度:</label>
+                                        <input type="number" id="spriteAnimFps" value="10" min="1" max="60" style="width: 46px; padding: 2px 4px; font-size: 11px; text-align: center;">
+                                        <span style="font-size: 11px; color: var(--text-muted);">fps</span>
+                                    </div>
+                                </div>
+                                <div style="display: flex; align-items: center; gap: 10px;">
+                                    <div class="checkerboard" style="width: 68px; height: 68px; border: 1px solid var(--border-color); border-radius: 4px; display: flex; align-items: center; justify-content: center; overflow: hidden; flex-shrink: 0; background-color: var(--bg-panel-secondary);">
+                                        <canvas id="spriteAnimCanvas" width="64" height="64" style="max-width: 100%; max-height: 100%; object-fit: contain; image-rendering: pixelated; display: block;"></canvas>
+                                    </div>
+                                    <div style="flex: 1; font-size: 11px; color: var(--text-muted);">
+                                        <div id="spriteAnimFrameText" style="font-family: monospace; font-weight: 600; color: var(--text-main);">コマ: - / -</div>
+                                        <div style="margin-top: 5px; display: flex; gap: 5px;">
+                                            <button id="spriteAnimPrevBtn" class="btn" style="padding: 2px 8px; font-size: 10px;">◀ 前のコマ</button>
+                                            <button id="spriteAnimNextBtn" class="btn" style="padding: 2px 8px; font-size: 10px;">次のコマ ▶</button>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style="margin-top: 10px; display: flex; gap: 8px;">
+                                <input type="text" id="spriteFilename" value="sprite" placeholder="出力ファイル名 (例: fireball)">
+                                <button id="spriteExportBtn" disabled class="btn btn-primary" style="white-space: nowrap;">
+                                    ZIP一括保存 (連番)
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 4: 画像形式一括変換
+                 ========================================================================== -->
+            <section id="view-img-converter" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">画像形式一括変換 (PNG / JPG / WEBP)</span>
+                    </div>
+
+                    <div class="grid-2">
+                        <div>
+                            <div id="imgConvDrop" class="drop-zone mb-4">
+                                <input type="file" id="imgConvInput" multiple accept="image/*">
+                                <div style="font-weight: 700;">画像ファイルをドロップ、または選択</div>
+                            </div>
+
+                            <div class="panel" style="margin: 0; background-color: var(--bg-panel-secondary);">
+                                <label>変換フォーマット</label>
+                                <div style="display: flex; gap: 6px; margin-bottom: 12px;" id="imgConvFmtGroup">
+                                    <button class="btn img-fmt-btn btn-primary" data-fmt="png">PNG</button>
+                                    <button class="btn img-fmt-btn" data-fmt="jpg">JPG</button>
+                                    <button class="btn img-fmt-btn" data-fmt="webp">WEBP</button>
+                                </div>
+
+                                <div id="imgConvQualityBox" class="hidden mb-4">
+                                    <div class="flex-between">
+                                        <label>画質設定</label>
+                                        <span id="imgConvQualityVal" style="font-weight: 700;">80%</span>
+                                    </div>
+                                    <input type="range" id="imgConvQuality" min="1" max="100" value="80">
+                                </div>
+
+                                <button id="imgConvStartBtn" disabled class="btn btn-primary" style="width: 100%; padding: 9px; margin-bottom: 8px;">
+                                    変換の開始
+                                </button>
+                                <button id="imgConvZipBtn" disabled class="btn" style="width: 100%; padding: 9px;">
+                                    ZIP一括保存
+                                </button>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex-between mb-2">
+                                <label id="imgConvCount">ファイル一覧 (0件)</label>
+                                <button id="imgConvClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 10px;">クリア</button>
+                            </div>
+                            <div id="imgConvList" style="border: 1px solid var(--border-color); background-color: var(--bg-panel-secondary); height: 320px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 6px;"></div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 5: 透過画像余白自動削減
+                 ========================================================================== -->
+            <section id="view-png-crop" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">透過画像余白自動削減 (透明部分の自動トリミング / ファイル名末尾 _c)</span>
+                    </div>
+
+                    <div id="pngCropDrop" class="drop-zone mb-4">
+                        <input type="file" id="pngCropInput" multiple accept="image/png,image/webp">
+                        <div style="font-weight: 700;">透過PNG / WEBPをドロップ</div>
+                        <div style="color: var(--text-muted); font-size: 11px;">透明な境界領域を検知して最小サイズにカットします</div>
+                    </div>
+
+                    <div id="pngCropResults" class="grid-3"></div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 6: クロマキー背景透過
+                 ========================================================================== -->
+            <section id="view-chroma-key" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">クロマキー背景透過 (スポイト色抜き・アルファ抽出)</span>
+                    </div>
+
+                    <div class="grid-2">
+                        <div>
+                            <div id="chromaDrop" class="drop-zone mb-4">
+                                <input type="file" id="chromaInput" accept="image/*">
+                                <div style="font-weight: 700;">画像を選択</div>
+                            </div>
+
+                            <div class="panel" style="margin: 0; background-color: var(--bg-panel-secondary);">
+                                <label>透過させる色の指定</label>
+                                <div style="display: flex; gap: 8px; margin-bottom: 8px; align-items: center;">
+                                    <input type="color" id="chromaColorPicker" value="#00FF00" style="width: 40px; height: 30px; padding: 0; border: none; cursor: pointer;">
+                                    <input type="text" id="chromaColorText" value="#00FF00" style="font-weight: 700; font-family: monospace;">
+                                    <button id="chromaPipetteBtn" class="btn">スポイトで画像から取得</button>
+                                </div>
+                                <div id="chromaPipetteHint" class="hidden" style="font-size: 11px; color: var(--accent-primary); margin-bottom: 8px;">
+                                    右側の画像上で透過させたい色をクリックしてください
+                                </div>
+
+                                <div style="margin-bottom: 12px;">
+                                    <div class="flex-between"><label>色の許容範囲 (Tolerance)</label><span id="chromaTolVal" style="font-weight: 700;">15%</span></div>
+                                    <input type="range" id="chromaTol" min="0" max="100" value="15">
+                                </div>
+
+                                <div style="margin-bottom: 12px;">
+                                    <div class="flex-between"><label>境界の滑らかさ (Smoothness)</label><span id="chromaSmoothVal" style="font-weight: 700;">10%</span></div>
+                                    <input type="range" id="chromaSmooth" min="0" max="50" value="10">
+                                </div>
+
+                                <button id="chromaDownloadBtn" disabled class="btn btn-primary" style="width: 100%; padding: 9px;">
+                                    透過PNGを保存
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="checkerboard" style="border: 1px solid var(--border-color); height: 350px; display: flex; align-items: center; justify-content: center; overflow: hidden; position: relative;">
+                            <canvas id="chromaCanvas" class="hidden" style="max-width: 100%; max-height: 100%; object-fit: contain; cursor: crosshair;"></canvas>
+                            <span id="chromaPlaceholder" style="color: var(--text-muted);">プレビュー表示領域</span>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 7: SVG余白トリミング
+                 ========================================================================== -->
+            <section id="view-svg-crop" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">SVG余白トリミング (ViewBox自動再計算 / ファイル名末尾 _c)</span>
+                    </div>
+
+                    <div id="svgCropDrop" class="drop-zone mb-4">
+                        <input type="file" id="svgCropInput" accept=".svg">
+                        <div style="font-weight: 700;">SVGファイルをドロップ</div>
+                    </div>
+
+                    <div id="svgCropWorkspace" class="grid-2 hidden">
+                        <div class="checkerboard" style="border: 1px solid var(--border-color); height: 300px; display: flex; align-items: center; justify-content: center; padding: 12px;">
+                            <div id="svgCropPreview" style="max-width: 100%; max-height: 100%;"></div>
+                        </div>
+
+                        <div class="panel" style="margin: 0; background-color: var(--bg-panel-secondary);">
+                            <label>SVG ViewBox 情報</label>
+                            <div id="svgCropViewbox" style="font-family: monospace; font-weight: 700; margin-bottom: 12px;">-</div>
+
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; margin-bottom: 8px;">
+                                <input type="checkbox" id="svgCropPaddingChk"> パディングを追加
+                            </label>
+                            <input type="range" id="svgCropPaddingRange" min="0" max="50" value="0" class="hidden" style="margin-bottom: 12px;">
+
+                            <button id="svgCropDownloadBtn" class="btn btn-primary" style="width: 100%; padding: 9px; margin-bottom: 6px;">
+                                クロップ済みSVGを保存
+                            </button>
+                            <button id="svgCropCopyBtn" class="btn" style="width: 100%; padding: 8px;">
+                                SVGコードをクリップボードにコピー
+                            </button>
+                        </div>
+                    </div>
+                </div>
+                <div id="svgCropCalcContainer" style="position: absolute; top: -9999px; left: -9999px; opacity: 0; pointer-events: none;"></div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 8: PDF画像抽出・変換
+                 ========================================================================== -->
+            <section id="view-pdf-tools" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">PDF画像抽出・変換 (ページ画像化 & 内部埋め込み素材抽出)</span>
+                    </div>
+
+                    <div class="grid-2 mb-4">
+                        <div class="panel" style="margin: 0; background-color: var(--bg-panel-secondary);">
+                            <label>処理モード選択</label>
+                            <select id="pdfModeSelect" style="margin-bottom: 8px;">
+                                <option value="convert">各ページを画像変換 (PNG化)</option>
+                                <option value="extract">PDF内の埋め込み画像素材を抽出</option>
+                            </select>
+
+                            <label>解像度スケール</label>
+                            <select id="pdfScaleSelect">
+                                <option value="1">1.0x (標準解像度)</option>
+                                <option value="2" selected>2.0x (高画質)</option>
+                                <option value="3">3.0x (最高画質)</option>
+                            </select>
+                        </div>
+
+                        <div id="pdfDropZone" class="drop-zone">
+                            <input type="file" id="pdfFileInput" accept="application/pdf">
+                            <div style="font-weight: 700;">PDFファイルをドロップ、または選択</div>
+                        </div>
+                    </div>
+
+                    <div id="pdfProgressSection" class="hidden mb-4">
+                        <div class="flex-between" style="font-size: 11px;">
+                            <span id="pdfStatusText">PDFを処理中...</span>
+                            <span id="pdfProgressPercent">0 / 0</span>
+                        </div>
+                        <div class="progress-bar-container">
+                            <div id="pdfProgressBar" class="progress-bar-fill"></div>
+                        </div>
+                    </div>
+
+                    <div id="pdfResultSection" class="hidden">
+                        <div class="flex-between mb-2">
+                            <label id="pdfResultCount">抽出結果</label>
+                            <button id="pdfZipBtn" class="btn btn-primary">ZIP一括保存</button>
+                        </div>
+                        <div id="pdfGallery" class="grid-3"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 9: 1バイトフォントコード変換
+                 ========================================================================== -->
+            <section id="view-1byte-font" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">1バイトフォントコード変換 (JIS配列英数文字コード置換)</span>
+                    </div>
+
+                    <div class="grid-2">
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="margin: 0; font-weight: 700; color: var(--text-heading);">入力テキスト (ひらがな・カタカナ)</label>
+                                <button id="oneByteInputClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 10px;">クリア</button>
+                            </div>
+                            <textarea id="oneByteInput" style="height: 180px; margin-bottom: 10px;" placeholder="ここにかなテキストを入力..."></textarea>
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer; font-size: 11px;">
+                                <input type="checkbox" id="oneByteHasDakuten" checked> 濁点・半濁点を分離変換 (例: ガ→t@, パ→f[)
+                            </label>
+                        </div>
+
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="margin: 0; font-weight: 700; color: var(--text-heading);">出力 (1byte英数コード)</label>
+                                <div style="display: flex; gap: 4px;">
+                                    <button id="oneByteCopyBtn" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">コピー</button>
+                                    <button id="oneByteClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 10px;">クリア</button>
+                                </div>
+                            </div>
+                            <textarea id="oneByteOutput" readonly style="height: 180px; font-family: monospace; background-color: var(--bg-panel-secondary);"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 10: ローマ字かな変換
+                 ========================================================================== -->
+            <section id="view-romaji-kana" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">ローマ字かな変換 (一括ひらがな置換)</span>
+                    </div>
+
+                    <div class="grid-2">
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="margin: 0; font-weight: 700; color: var(--text-heading);">入力 (ローマ字)</label>
+                                <button id="romajiInputClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 10px;">クリア</button>
+                            </div>
+                            <textarea id="romajiInput" style="height: 180px; margin-bottom: 10px;" placeholder="kashino romaji wo nyuryoku..."></textarea>
+                            <div style="display: flex; gap: 12px; font-size: 11px;">
+                                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                    <input type="checkbox" id="romajiSpaces" checked> スペース削除
+                                </label>
+                                <label style="display: flex; align-items: center; gap: 4px; cursor: pointer;">
+                                    <input type="checkbox" id="romajiPunct" checked> 記号削除
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="margin: 0; font-weight: 700; color: var(--text-heading);">出力 (ひらがな)</label>
+                                <div style="display: flex; gap: 4px;">
+                                    <button id="romajiCopyBtn" class="btn btn-primary" style="padding: 2px 8px; font-size: 10px;">コピー</button>
+                                    <button id="romajiClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 10px;">クリア</button>
+                                </div>
+                            </div>
+                            <textarea id="romajiOutput" readonly style="height: 180px; background-color: var(--bg-panel-secondary);"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL: 特殊文字・フォント変換 (Unicode Font & Special Characters)
+                 ========================================================================== -->
+            <section id="view-unicode-font" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <span class="panel-title">特殊文字・フォント変換 (Unicode Fancy Text & Symbols)</span>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                                アルファベット・数字をUnicode特殊フォント（筆記体・フラクトゥール・白抜き・丸囲み・装飾枠）へリアルタイム一括変換
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span id="ufCounterBadge" class="chip" style="font-size: 11px; font-weight: 600;">全 48 スタイル</span>
+                        </div>
+                    </div>
+
+                    <!-- INPUT & QUICK ACTIONS PANEL -->
+                    <div class="panel" style="margin: 0 0 14px 0; background-color: var(--bg-panel-secondary); padding: 12px 14px;">
+                        <div class="flex-between mb-1">
+                            <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">変換元テキスト入力 (英数字・テキスト)</label>
+                            <div style="display: flex; gap: 4px; flex-wrap: wrap;">
+                                <button id="ufSample1Btn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">サンプル: example</button>
+                                <button id="ufSample2Btn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">サンプル: Sample Text 2026</button>
+                                <button id="ufUpperBtn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">大文字化</button>
+                                <button id="ufLowerBtn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">小文字化</button>
+                                <button id="ufTitleBtn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">Title Case</button>
+                                <button id="ufSpaceBtn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">文字間スペース</button>
+                                <button id="ufClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 10.5px;">クリア</button>
+                            </div>
+                        </div>
+                        <textarea id="ufInput" style="height: 72px; font-size: 15px; line-height: 1.5; padding: 8px 12px; margin-bottom: 8px;" placeholder="ここに英文・アルファベット・数字を入力 (例: example)...">example</textarea>
+
+                        <!-- CUSTOM DECORATION WRAPPER (OPTIONAL) -->
+                        <div class="flex-between" style="flex-wrap: wrap; gap: 8px; font-size: 11px; padding-top: 4px;">
+                            <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                                <span style="font-weight: 700; color: var(--text-main);">前後の装飾枠:</span>
+                                <input type="text" id="ufCustomPrefix" placeholder="前置 (例: ꧁)" style="width: 80px; padding: 3px 6px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color);">
+                                <span style="color: var(--text-muted);">＋ [変換文字] ＋</span>
+                                <input type="text" id="ufCustomSuffix" placeholder="後置 (例: ꧂)" style="width: 80px; padding: 3px 6px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color);">
+                                <button id="ufClearDecorBtn" class="btn" style="padding: 2px 6px; font-size: 10px;">装飾クリア</button>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 4px; flex-wrap: wrap;">
+                                <span style="color: var(--text-muted);">枠プリセット:</span>
+                                <button class="btn uf-preset-decor" data-pre="꧁ " data-suf=" ꧂" style="padding: 2px 6px; font-size: 10px;">꧁ ꧂</button>
+                                <button class="btn uf-preset-decor" data-pre="★:*:・ " data-suf=" ・:*:★" style="padding: 2px 6px; font-size: 10px;">★:*:・</button>
+                                <button class="btn uf-preset-decor" data-pre="♡⑅ " data-suf=" ⑅♡" style="padding: 2px 6px; font-size: 10px;">♡⑅ ⑅♡</button>
+                                <button class="btn uf-preset-decor" data-pre="˗ˏˋ " data-suf=" ˎˊ˗" style="padding: 2px 6px; font-size: 10px;">˗ˏˋ ˎˊ˗</button>
+                                <button class="btn uf-preset-decor" data-pre="◤ " data-suf=" ◢" style="padding: 2px 6px; font-size: 10px;">◤ ◢</button>
+                                <button class="btn uf-preset-decor" data-pre="【 " data-suf=" 】" style="padding: 2px 6px; font-size: 10px;">【 】</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- CATEGORY TABS & SEARCH -->
+                    <div class="flex-between" style="flex-wrap: wrap; gap: 8px; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                        <div style="display: flex; gap: 4px; flex-wrap: wrap;" id="ufCategoryTabs">
+                            <button class="btn btn-primary uf-tab-btn active" data-cat="all" style="padding: 4px 10px; font-size: 11px;">すべて (All)</button>
+                            <button class="btn uf-tab-btn" data-cat="cursive" style="padding: 4px 10px; font-size: 11px;">筆記体・セリフ</button>
+                            <button class="btn uf-tab-btn" data-cat="gothic" style="padding: 4px 10px; font-size: 11px;">ゴシック・太字</button>
+                            <button class="btn uf-tab-btn" data-cat="enclosed" style="padding: 4px 10px; font-size: 11px;">囲み・丸・四角</button>
+                            <button class="btn uf-tab-btn" data-cat="effects" style="padding: 4px 10px; font-size: 11px;">特殊エフェクト・反転</button>
+                            <button class="btn uf-tab-btn" data-cat="frames" style="padding: 4px 10px; font-size: 11px;">デコレーション装飾枠</button>
+                            <button class="btn uf-tab-btn" data-cat="symbols" style="padding: 4px 10px; font-size: 11px;">特殊記号・顔文字パレット</button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            <input type="text" id="ufSearchInput" placeholder="スタイル名・タグで検索..." style="width: 170px; padding: 4px 8px; font-size: 11px; background-color: var(--bg-panel); color: var(--text-heading); border: 1px solid var(--border-color);">
+                        </div>
+                    </div>
+
+                    <!-- FONT CONVERSION RESULTS GRID -->
+                    <div id="ufGridContainer">
+                        <div id="ufGrid" class="uf-grid"></div>
+                    </div>
+
+                    <!-- SPECIAL SYMBOLS & KAOMOJI PALETTE VIEW (WHEN TAB IS ACTIVE OR EXPANDED) -->
+                    <div id="ufSymbolPalettePanel" class="hidden" style="margin-top: 4px;">
+                        <div style="display: flex; flex-direction: column; gap: 14px;">
+                            <!-- HEARTS & STARS -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-pink);">ハート・星・キラキラ (クリックでコピー)</span>
+                                </div>
+                                <div class="uf-symbol-grid" id="ufPalHearts"></div>
+                            </div>
+
+                            <!-- MUSIC & AUDIO & NOTES -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-cyan);">音符・音楽・オーディオ記号</span>
+                                </div>
+                                <div class="uf-symbol-grid" id="ufPalMusic"></div>
+                            </div>
+
+                            <!-- ARROWS & POINTERS -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-primary);">矢印・ポインター・方向記号</span>
+                                </div>
+                                <div class="uf-symbol-grid" id="ufPalArrows"></div>
+                            </div>
+
+                            <!-- FLOWERS, RIBBONS & NATURE -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-green);">花・リボン・自然・羽</span>
+                                </div>
+                                <div class="uf-symbol-grid" id="ufPalFlowers"></div>
+                            </div>
+
+                            <!-- FRAMES & BRACKETS & LINES -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-amber);">枠・括弧・飾り罫線</span>
+                                </div>
+                                <div class="uf-symbol-grid" id="ufPalBrackets"></div>
+                            </div>
+
+                            <!-- GEOMETRIC & CHESS & ASTROLOGY -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--accent-purple);">幾何学・チェス・天体・数字</span>
+                                </div>
+                                <div class="uf-symbol-grid" id="ufPalGeometric"></div>
+                            </div>
+
+                            <!-- CUTE KAOMOJI -->
+                            <div class="panel" style="margin: 0; padding: 10px 12px; background-color: var(--bg-panel-secondary);">
+                                <div class="flex-between mb-1">
+                                    <span style="font-size: 11.5px; font-weight: 700; color: var(--text-heading);">かわいい特殊顔文字 (Kaomoji)</span>
+                                </div>
+                                <div class="uf-kaomoji-grid" id="ufPalKaomoji"></div>
+                            </div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL 11: 文字数カウンター (大学ミニレポート・文章解析・自動校正)
+                 ========================================================================== -->
+            <section id="view-text-counter" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <span class="panel-title">文字数カウンター</span>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                                大学レポート・論文・文章解析・リアルタイム自動校正
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px; font-size: 11px;">
+                            <span id="tcSaveStatus" class="chip" style="color: var(--accent-green); display: inline-flex; align-items: center; gap: 5px;">
+                                <span style="width: 6px; height: 6px; border-radius: 50%; background-color: var(--accent-green); display: inline-block;"></span>
+                                自動保存: 有効
+                            </span>
+                        </div>
+                    </div>
+
+                    <!-- TARGET & PROGRESS BAR PANEL -->
+                    <div class="tc-target-card">
+                        <div class="flex-between" style="flex-wrap: wrap; gap: 10px; margin-bottom: 8px;">
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap;">
+                                <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px; display: flex; align-items: center; gap: 4px;">
+                                    🎯 目標文字数:
+                                </label>
+                                <div style="display: flex; gap: 5px; flex-wrap: wrap;">
+                                    <button class="tc-target-pill" data-target-num="400">400字 (原稿1枚)</button>
+                                    <button class="tc-target-pill active" data-target-num="800">800字 (小レポート)</button>
+                                    <button class="tc-target-pill" data-target-num="1000">1000字</button>
+                                    <button class="tc-target-pill" data-target-num="1200">1200字 (標準)</button>
+                                    <button class="tc-target-pill" data-target-num="1600">1600字</button>
+                                    <button class="tc-target-pill" data-target-num="2000">2000字 (大レポート)</button>
+                                    <button class="tc-target-pill" data-target-num="4000">4000字 (論文)</button>
+                                </div>
+                            </div>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                <label style="margin: 0; white-space: nowrap; color: var(--text-main); font-weight: 600; font-size: 12px;">自由指定:</label>
+                                <input type="number" id="tcTargetInput" value="800" min="1" max="100000" style="width: 80px; padding: 4px 8px; font-weight: 700; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color); border-radius: 4px; font-size: 12px;">
+                                <span style="font-size: 11.5px; color: var(--text-main); font-weight: 600;">字</span>
+                            </div>
+                        </div>
+
+                        <!-- PROGRESS BAR & STATUS -->
+                        <div class="tc-bar-wrapper">
+                            <div id="tcProgressBar" class="tc-bar-seg" style="width: 0%; background: linear-gradient(90deg, var(--accent-primary) 0%, #38bdf8 100%);"></div>
+                        </div>
+                        <div class="flex-between" style="font-size: 11.5px; flex-wrap: wrap; gap: 8px; margin-top: 4px;">
+                            <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
+                                <span id="tcProgressPercent" style="font-weight: 800; color: var(--text-heading);">達成率: 0.0%</span>
+                                <span id="tcProgressDiff" class="chip" style="font-size: 11px; padding: 2px 8px; border-radius: 4px;">残り 800 字</span>
+                                <span id="tcTargetRangeAdvice" style="color: var(--text-muted); font-weight: 500;">レポート推奨目安: 720〜880字 (±10%)</span>
+                            </div>
+                            <div id="tcManuscriptBadge" style="font-weight: 700; color: var(--accent-amber); font-size: 11.5px;">
+                                400字原稿用紙: 0枚 0行
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MAIN WORK AREA -->
+                    <div class="grid-2 tc-main-grid" style="align-items: start; margin-bottom: 16px;">
+                        
+                        <!-- LEFT COLUMN: EDITOR & FORMAT TOOLBAR -->
+                        <div>
+                            <!-- CATEGORIZED FORMAT TOOLBAR -->
+                            <div class="tc-toolbar">
+                                <div class="tc-toolbar-group">
+                                    <span style="font-size: 10px; font-weight: 700; color: var(--text-muted);">段落・空行:</span>
+                                    <button id="tcToolIndent" class="btn" style="padding: 3px 8px; font-size: 11px;" title="各段落の先頭に全角スペースを挿入します">字下げ</button>
+                                    <button id="tcToolCleanLines" class="btn" style="padding: 3px 8px; font-size: 11px;" title="2行以上の連続空行を1行に整理し、行末空白を除去します">空行整理</button>
+                                    <button id="tcToolPunctToggle" class="btn" style="padding: 3px 8px; font-size: 11px;" title="「、」「。」と「，」「．」（論文用）を相互変換します">「、。」⇄「，．」</button>
+                                </div>
+                                <div class="tc-toolbar-group">
+                                    <span style="font-size: 10px; font-weight: 700; color: var(--text-muted);">文字規格:</span>
+                                    <button id="tcToolZenHanAlpha" class="btn" style="padding: 3px 8px; font-size: 11px;" title="全角の英数字を半角に変換します">全角英数→半角</button>
+                                    <button id="tcToolHanZenKana" class="btn" style="padding: 3px 8px; font-size: 11px;" title="半角カタカナを全角カタカナに変換します">半角カナ→全角</button>
+                                    <button id="tcToolCaseToggle" class="btn" style="padding: 3px 8px; font-size: 11px;" title="英字の大文字/小文字を変換します">大文字⇄小文字</button>
+                                </div>
+                                <div class="tc-toolbar-group">
+                                    <button id="tcToolUndo" class="btn" style="padding: 3px 8px; font-size: 11px;" title="直前の変更を取り消します" disabled>元に戻す</button>
+                                </div>
+                            </div>
+
+                            <!-- FILE & ACTION BUTTONS -->
+                            <div class="flex-between mb-1" style="flex-wrap: wrap; gap: 6px;">
+                                <div style="display: flex; gap: 8px; align-items: center;">
+                                    <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">レポート本文エディタ</label>
+                                    <label class="btn" style="padding: 3px 8px; font-size: 11px; cursor: pointer; margin: 0; display: inline-flex; align-items: center; gap: 4px;">
+                                        📁 ファイル読込
+                                        <input type="file" id="tcFileInput" accept=".txt,.md,.text" style="display: none;">
+                                    </label>
+                                </div>
+                                <div style="display: flex; gap: 4px; align-items: center; flex-wrap: wrap;">
+                                    <div style="display: inline-flex; border: 1px solid var(--border-color); border-radius: 4px; overflow: hidden; margin-right: 4px;">
+                                        <button id="tcFontSizeSm" class="btn" style="padding: 3px 7px; font-size: 10.5px; border: none; border-radius: 0;">小</button>
+                                        <button id="tcFontSizeMd" class="btn btn-primary" style="padding: 3px 7px; font-size: 10.5px; border: none; border-radius: 0;">標準</button>
+                                        <button id="tcFontSizeLg" class="btn" style="padding: 3px 7px; font-size: 10.5px; border: none; border-radius: 0;">大</button>
+                                    </div>
+                                    <button id="tcCopyBtn" class="btn btn-primary" style="padding: 3px 10px; font-size: 11px;">本文コピー</button>
+                                    <button id="tcSaveTxtBtn" class="btn" style="padding: 3px 10px; font-size: 11px;">保存 (.txt)</button>
+                                    <button id="tcClearBtn" class="btn btn-danger" style="padding: 3px 8px; font-size: 11px;">クリア</button>
+                                </div>
+                            </div>
+
+                            <!-- TEXTAREA -->
+                            <textarea id="tcEditor" class="tc-editor-textarea" placeholder="ここに大学のレポート、課題、レポート本文を入力またはペーストしてください...&#10;&#10;（※入力内容はブラウザに自動保存されるため、タブを閉じたり誤ってリロードしても消えません）"></textarea>
+
+                            <!-- EDITOR FOOTER INFO -->
+                            <div class="flex-between" style="font-size: 11px; color: var(--text-muted); padding: 4px 6px; background-color: var(--bg-panel-secondary); border: 1px solid var(--border-color); border-top: none; border-radius: 0 0 4px 4px;">
+                                <span id="tcCursorPos" style="font-weight: 500;">カーソル: 1行目 1文字目 | 選択: 0文字</span>
+                                <span id="tcLastSaved" style="font-weight: 600; color: var(--text-main); display: inline-flex; align-items: center; gap: 4px;">
+                                    <span style="width: 5px; height: 5px; border-radius: 50%; background-color: var(--accent-green); display: inline-block;"></span>
+                                    自動保存: --:--:--
+                                </span>
+                            </div>
+                        </div>
+
+                        <!-- RIGHT COLUMN: STATS & COMPOSITION & EVALUATION -->
+                        <div>
+                            <!-- KPI STATS CARDS -->
+                            <div class="flex-between" style="margin-bottom: 8px;">
+                                <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">📊 基本カウント指標</label>
+                            </div>
+                            <div class="tc-kpi-grid">
+                                <!-- HERO METRIC CARD -->
+                                <div class="tc-kpi-card hero">
+                                    <div class="tc-kpi-title">
+                                        <span>提出文字数 (空白・改行除く)</span>
+                                        <span style="font-size: 10px; padding: 2px 6px; background-color: rgba(16, 185, 129, 0.15); color: var(--accent-green); border-radius: 3px; font-weight: 700;">公式提出規格</span>
+                                    </div>
+                                    <div id="tcStatNoSpaceChars" class="tc-kpi-num">0</div>
+                                    <div class="tc-kpi-sub">大学レポート・論文の指定本文カウント</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">総文字数 (全文字)</div>
+                                    <div id="tcStatTotalChars" class="tc-kpi-num">0</div>
+                                    <div class="tc-kpi-sub">空白・改行含む全カウント</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">実質文字数 (記号除く)</div>
+                                    <div id="tcStatLettersOnly" class="tc-kpi-num" style="color: var(--accent-purple);">0</div>
+                                    <div class="tc-kpi-sub">漢字・かな・英数字のみ</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">単語数 (Word Count)</div>
+                                    <div id="tcStatWordCount" class="tc-kpi-num" style="color: var(--accent-cyan);">0</div>
+                                    <div class="tc-kpi-sub">形態素・英単語単位</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">行数</div>
+                                    <div id="tcStatLines" class="tc-kpi-num">0</div>
+                                    <div id="tcStatLinesSub" class="tc-kpi-sub">空行除く: 0 行</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">段落数</div>
+                                    <div id="tcStatParagraphs" class="tc-kpi-num">0</div>
+                                    <div class="tc-kpi-sub">文章ブロック数</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">400字原稿用紙換算</div>
+                                    <div id="tcStatGenko400" class="tc-kpi-num" style="font-size: 18px; color: var(--accent-amber);">0枚 0行</div>
+                                    <div id="tcStatGenko200" class="tc-kpi-sub">200字詰: 約0枚</div>
+                                </div>
+                                <div class="tc-kpi-card">
+                                    <div class="tc-kpi-title">読了時間目安</div>
+                                    <div id="tcStatReadTime" class="tc-kpi-num" style="font-size: 18px; color: var(--accent-primary);">約 0 分</div>
+                                    <div id="tcStatSpeechTime" class="tc-kpi-sub">音読/発表: 約 0 分</div>
+                                </div>
+                            </div>
+
+                            <!-- CHARACTER BREAKDOWN & PROPORTION -->
+                            <div class="panel" style="margin: 0 0 12px 0; padding: 12px 14px; background-color: var(--bg-panel-secondary); border-radius: 4px;">
+                                <div class="flex-between" style="margin-bottom: 8px;">
+                                    <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">🔤 文字種内訳 & 構成比</label>
+                                    <span id="tcKanjiRateBadge" class="chip" style="color: var(--text-heading); font-weight: 700; font-size: 11px; padding: 3px 8px; border-radius: 4px;">漢字率: 0.0%</span>
+                                </div>
+
+                                <!-- SEGMENTED COLOR BAR -->
+                                <div id="tcCompositionBar" class="tc-bar-wrapper">
+                                    <div class="tc-bar-seg" id="tcSegHiragana" style="width: 0%; background-color: #34d399;" title="ひらがな"></div>
+                                    <div class="tc-bar-seg" id="tcSegKatakana" style="width: 0%; background-color: #22d3ee;" title="カタカナ"></div>
+                                    <div class="tc-bar-seg" id="tcSegKanji" style="width: 0%; background-color: #c084fc;" title="漢字"></div>
+                                    <div class="tc-bar-seg" id="tcSegAlpha" style="width: 0%; background-color: #60a5fa;" title="英字"></div>
+                                    <div class="tc-bar-seg" id="tcSegNumber" style="width: 0%; background-color: #fbbf24;" title="数字"></div>
+                                    <div class="tc-bar-seg" id="tcSegSymbol" style="width: 0%; background-color: #f472b6;" title="記号"></div>
+                                    <div class="tc-bar-seg" id="tcSegSpace" style="width: 0%; background-color: #94a3b8;" title="空白・改行"></div>
+                                </div>
+
+                                <!-- BREAKDOWN GRID -->
+                                <div class="tc-breakdown-grid">
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #34d399;">● ひらがな</div>
+                                        <div><span id="tcCountHiragana" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctHiragana">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #22d3ee;">● カタカナ</div>
+                                        <div><span id="tcCountKatakana" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctKatakana">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #c084fc;">● 漢字</div>
+                                        <div><span id="tcCountKanji" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctKanji">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #60a5fa;">● 英字</div>
+                                        <div><span id="tcCountAlpha" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctAlpha">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #fbbf24;">● 数字</div>
+                                        <div><span id="tcCountNumber" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctNumber">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #f472b6;">● 記号・句読点</div>
+                                        <div><span id="tcCountSymbol" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctSymbol">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #94a3b8;">● 空白</div>
+                                        <div><span id="tcCountSpace" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctSpace">0</span>%)</span></div>
+                                    </div>
+                                    <div class="tc-breakdown-card">
+                                        <div class="tc-breakdown-label" style="color: #cbd5e1;">● 改行</div>
+                                        <div><span id="tcCountNewline" class="tc-breakdown-value">0</span> <span class="tc-breakdown-pct">(<span id="tcPctNewline">0</span>%)</span></div>
+                                    </div>
+                                </div>
+
+                                <!-- READABILITY DIAGNOSIS -->
+                                <div id="tcReadabilityBox" class="tc-readability-card">
+                                    <strong>💡 レポート読みやすさ診断:</strong> 本文を入力すると漢字率・文章バランスのアドバイスが表示されます。
+                                </div>
+                            </div>
+
+                            <!-- SNAPSHOTS / HISTORY DRAFTS -->
+                            <div class="panel" style="margin: 0; padding: 12px 14px; background-color: var(--bg-panel-secondary); border-radius: 4px;">
+                                <div class="flex-between mb-1">
+                                    <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">📌 下書きスナップショット履歴</label>
+                                    <button id="tcSaveSnapshotBtn" class="btn" style="padding: 3px 9px; font-size: 10.5px;">スナップショット保存</button>
+                                </div>
+                                <div id="tcSnapshotList" style="max-height: 130px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; font-size: 11px; margin-top: 6px;">
+                                    <div style="color: var(--text-muted); font-size: 11px; text-align: center; padding: 8px;">保存されたスナップショットはありません</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL: MARKDOWN エディタ (GitHub README / Discord / 技術記事 / リアルタイムプレビュー)
+                 ========================================================================== -->
+            <section id="view-markdown-editor" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <span class="panel-title">Markdown リアルタイムエディタ</span>
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 2px;">
+                                選択範囲の装飾変換・リアルタイムプレビュー・.md入出力
+                            </div>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
+                            <span id="mdSaveStatus" class="chip" style="font-size: 10px; color: var(--accent-green); margin-right: 2px;">🟢 自動保存: 有効</span>
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <select id="mdTemplateSelect" style="padding: 3px 6px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color); border-radius: 4px;">
+                                    <option value="">-- 定型テンプレート --</option>
+                                    <option value="layout_callouts">GitHub コールアウト枠</option>
+                                    <option value="readme">README.md 標準構成</option>
+                                    <option value="release_note">リリースノート (更新履歴)</option>
+                                    <option value="meeting_notes">ミーティング議事録</option>
+                                    <option value="tech_spec">技術仕様書 (Tech Spec)</option>
+                                    <option value="discord_post">Discord 告知フォーマット</option>
+                                </select>
+                                <button id="mdApplyTemplateBtn" class="btn" style="padding: 3px 8px; font-size: 11px;" title="選択したテンプレートを挿入">挿入</button>
+                            </div>
+                            <label class="btn" style="padding: 3px 8px; font-size: 11px; cursor: pointer; margin: 0;">
+                                .md 読込
+                                <input type="file" id="mdFileInput" accept=".md,.txt,.markdown" style="display: none;">
+                            </label>
+                            <button id="mdClearBtn" class="btn btn-danger" style="padding: 3px 8px; font-size: 11px;">クリア</button>
+                            <div style="display: inline-flex; border: 1px solid var(--border-color); margin-left: 4px;">
+                                <button id="mdViewModeSplit" class="btn btn-primary" style="padding: 3px 8px; font-size: 11px;" title="左右分割表示">左右分割</button>
+                                <button id="mdViewModeEditor" class="btn" style="padding: 3px 8px; font-size: 11px;" title="エディタのみ">エディタ</button>
+                                <button id="mdViewModePreview" class="btn" style="padding: 3px 8px; font-size: 11px;" title="プレビューのみ">プレビュー</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FORMATTING TOOLBAR -->
+                    <div style="background-color: var(--bg-panel-secondary); border: 1px solid var(--border-color); padding: 6px 8px; margin-bottom: 10px;">
+                        <!-- ROW 1: BASIC & MARKDOWN CORE -->
+                        <div class="md-toolbar-row" style="margin-bottom: 4px; padding: 4px 6px; background: transparent; border: none;">
+                            <div class="md-toolbar-group">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">基本:</span>
+                                <button id="mdBtnBold" class="md-tool-btn" title="太字 (Ctrl+B)"><strong>B</strong></button>
+                                <button id="mdBtnItalic" class="md-tool-btn" title="斜体 (Ctrl+I)"><em>I</em></button>
+                                <button id="mdBtnStrike" class="md-tool-btn" title="打ち消し線"><s>S</s></button>
+                                <button id="mdBtnUnderline" class="md-tool-btn" title="下線"><u>U</u></button>
+                                <button id="mdBtnInlineCode" class="md-tool-btn" title="インラインコード"><code>&lt;/&gt;</code></button>
+                            </div>
+                            <div class="md-toolbar-group">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">見出し:</span>
+                                <button id="mdBtnH1" class="md-tool-btn" title="見出し 1 (H1)">H1</button>
+                                <button id="mdBtnH2" class="md-tool-btn" title="見出し 2 (H2)">H2</button>
+                                <button id="mdBtnH3" class="md-tool-btn" title="見出し 3 (H3)">H3</button>
+                            </div>
+                            <div class="md-toolbar-group">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">リスト:</span>
+                                <button id="mdBtnUl" class="md-tool-btn" title="箇条書きリスト (行頭ハイフン)">• リスト</button>
+                                <button id="mdBtnOl" class="md-tool-btn" title="番号付きリスト">1. 番号</button>
+                                <button id="mdBtnTask" class="md-tool-btn" title="チェックボックス (タスクリスト)">☑ タスク</button>
+                            </div>
+                            <div class="md-toolbar-group">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">引用・構造:</span>
+                                <button id="mdBtnQuote" class="md-tool-btn" title="引用ブロック">&gt; 引用</button>
+                                <button id="mdBtnCodeBlock" class="md-tool-btn" title="コードブロック">``` コード</button>
+                                <button id="mdBtnTable" class="md-tool-btn" title="表・テーブル挿入">表</button>
+                                <button id="mdBtnHr" class="md-tool-btn" title="水平区切り線">--- 罫線</button>
+                                <button id="mdBtnLink" class="md-tool-btn" title="リンク (Ctrl+K)">リンク</button>
+                                <button id="mdBtnImage" class="md-tool-btn" title="画像">画像</button>
+                            </div>
+                        </div>
+
+                        <!-- ROW 2: DISCORD & FORMATTING -->
+                        <div class="md-toolbar-row" style="margin-bottom: 0; padding: 4px 6px; background: transparent; border: none;">
+                            <div class="md-toolbar-group">
+                                <span style="font-size: 10px; font-weight: 700; color: #7289da; margin-right: 4px;">Discord / GitHub:</span>
+                                <button id="mdBtnDiscordSpoiler" class="md-tool-btn" title="Discord スポイラー隠し (||テキスト||)" style="color: #cbd5e1; background-color: #272736;">||スポイラー||</button>
+                                <button id="mdBtnDiscordSubtext" class="md-tool-btn" title="Discord 小さな文字 (-# テキスト)">-# 小文字</button>
+                                <button id="mdBtnDiscordTimestamp" class="md-tool-btn" title="Discord タイムスタンプ生成 (<t:unix:R>)">時刻タグ</button>
+                                <button id="mdBtnDiscordQuoteMulti" class="md-tool-btn" title="Discord 複数行引用 (>>> テキスト)">>>> 全体引用</button>
+                                <button id="mdBtnDiscordAnsi" class="md-tool-btn" title="Discord カラーテキスト (```ansi)">ANSIカラー</button>
+                                <button id="mdBtnGhAlert" class="md-tool-btn" title="GitHub アラート構文 (> [!NOTE])">[!NOTE]枠</button>
+                                <button id="mdBtnShieldsBadge" class="md-tool-btn" title="Shields.io バッジ挿入">バッジ</button>
+                                <button id="mdBtnDetails" class="md-tool-btn" title="折りたたみアコーディオン (<details>)">折りたたみ</button>
+                            </div>
+                            <div class="md-toolbar-group">
+                                <span style="font-size: 10px; font-weight: 700; color: var(--text-muted); margin-right: 4px;">テキスト整列・変換:</span>
+                                <button id="mdBtnZenHanAlpha" class="md-tool-btn" title="選択範囲の全角英数を半角に変換">全角英数→半角</button>
+                                <button id="mdBtnHanZenKana" class="md-tool-btn" title="選択範囲の半角カナを全角に変換">半角カナ→全角</button>
+                                <button id="mdBtnCaseToggle" class="md-tool-btn" title="選択範囲の大文字/小文字を変換">大文字⇄小文字</button>
+                                <button id="mdBtnCleanLines" class="md-tool-btn" title="連続空行・行末空白を整理">余白整理</button>
+                                <button id="mdBtnPunctToggle" class="md-tool-btn" title="「、」「。」⇄「，」「．」相互変換">、。⇄，．</button>
+                                <button id="mdBtnUndo" class="md-tool-btn" title="元に戻す (Ctrl+Z)" disabled>元に戻す</button>
+                                <button id="mdBtnRedo" class="md-tool-btn" title="やり直し (Ctrl+Y)" disabled>やり直し</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ACTION BAR / EXPORT BUTTONS -->
+                    <div class="flex-between mb-1" style="flex-wrap: wrap; gap: 8px; padding: 2px 0;">
+                        <div style="display: flex; gap: 6px; align-items: center;">
+                            <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">マークダウン入力</label>
+                            <span id="mdCursorInfo" style="font-size: 11px; color: var(--text-muted);">行: 1 列: 1 | 選択: 0文字</span>
+                        </div>
+                        <div style="display: flex; gap: 6px; align-items: center; flex-wrap: wrap;">
+                            <button id="mdCopyDiscordBtn" class="btn btn-primary" style="padding: 4px 10px; font-size: 11px; border-color: #5865F2; background-color: #5865F2; color: #ffffff;" title="Discord投稿用に整形してコピー">Discord形式コピー</button>
+                            <button id="mdCopyMdBtn" class="btn" style="padding: 4px 10px; font-size: 11px;">Markdownコピー</button>
+                            <button id="mdCopyRichHtmlBtn" class="btn" style="padding: 4px 10px; font-size: 11px;" title="Gmail/Notion等へ書式付きペースト可能">書式付きHTMLコピー</button>
+                            <div style="display: inline-flex; align-items: center; gap: 4px;">
+                                <input type="text" id="mdFilenameInput" value="document.md" style="width: 110px; padding: 4px 6px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color);" placeholder="ファイル名.md">
+                                <button id="mdDownloadBtn" class="btn" style="padding: 4px 10px; font-size: 11px;">.md保存</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MAIN WORK AREA: SPLIT GRID -->
+                    <div id="mdEditorGrid" class="md-editor-grid" style="margin-bottom: 12px;">
+                        <!-- LEFT: TEXTAREA -->
+                        <div id="mdEditorCol">
+                            <textarea id="mdTextarea" class="md-textarea" placeholder="# ここにマークダウンを入力...&#10;&#10;選択範囲を選んで上のツールバーを押すと、太字・スポイラー・見出し等へ瞬時に変換できます。&#10;リアルタイムで右側のプレビューに反映されます。"></textarea>
+                        </div>
+
+                        <!-- RIGHT: LIVE PREVIEW -->
+                        <div id="mdPreviewCol">
+                            <div id="mdPreviewContainer" class="md-preview-container">
+                                <div style="color: var(--text-muted); font-size: 12px; text-align: center; padding-top: 40px;">
+                                    マークダウンを入力すると、リアルタイムでプレビューが生成されます
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- FOOTER: STATS & DISCORD LIMIT METER -->
+                    <div class="grid-2" style="gap: 10px; margin-bottom: 6px;">
+                        <!-- DISCORD CHAR METER -->
+                        <div class="discord-meter-card">
+                            <div style="flex: 1;">
+                                <div class="flex-between mb-1" style="font-size: 11px;">
+                                    <span style="font-weight: 700; color: #5865F2;">Discord 1投稿文字数メーター:</span>
+                                    <span id="mdDiscordMeterText" style="font-weight: 800; color: var(--text-heading);">0 / 2,000 文字 (残り 2,000字)</span>
+                                </div>
+                                <div class="progress-bar-container" style="margin: 3px 0 0 0; height: 8px;">
+                                    <div id="mdDiscordMeterBar" class="progress-bar-fill" style="width: 0%; background-color: var(--accent-primary);"></div>
+                                </div>
+                            </div>
+                            <div id="mdDiscordStatusBadge" class="chip" style="font-size: 10px; white-space: nowrap;">1枠で投稿可能</div>
+                        </div>
+
+                        <!-- KPI SUMMARY STATS -->
+                        <div class="panel" style="margin: 0; padding: 8px 12px; background-color: var(--bg-panel-secondary); display: flex; align-items: center; justify-content: space-around; font-size: 11.5px;">
+                            <div><span style="color: var(--text-muted);">総文字数:</span> <strong id="mdStatTotalChars" style="color: var(--text-heading); font-size: 13px;">0</strong> 字</div>
+                            <div><span style="color: var(--text-muted);">空白除く:</span> <strong id="mdStatNoSpaceChars" style="color: var(--accent-green); font-size: 13px;">0</strong> 字</div>
+                            <div><span style="color: var(--text-muted);">単語数:</span> <strong id="mdStatWords" style="color: var(--accent-cyan); font-size: 13px;">0</strong></div>
+                            <div><span style="color: var(--text-muted);">行数:</span> <strong id="mdStatLines" style="color: var(--accent-purple); font-size: 13px;">0</strong></div>
+                            <div><span style="color: var(--text-muted);">読了目安:</span> <strong id="mdStatReadTime" style="color: var(--accent-amber); font-size: 13px;">約 0 分</strong></div>
+                        </div>
+                    </div>
+
+                </div>
+            </section>
+
+            <!-- TOOL: REAPER プロジェクトパス編集 -->
+            <section id="view-reaper-path" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">REAPER プロジェクトパス編集 (.rpp / .rpp-bak)</span>
+                        <button id="rpResetBtn" class="btn btn-danger hidden">クリア</button>
+                    </div>
+
+                    <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
+                        REAPERプロジェクトファイル内のオーディオメディア、サンプル、VSTプラグイン等のファイルパスを一括置換・正規化します。<br>
+                        PC移行時やユーザー名変更時に、絶対パスに含まれるユーザー名（例: <code style="color: var(--accent-amber);">C:\Users\oldname\...</code> → <code style="color: var(--accent-green);">C:\Users\owner\...</code>）を瞬時に一括変更できます。
+                    </div>
+
+                    <!-- DROP ZONE -->
+                    <div id="rpDropZone" class="drop-zone mb-4">
+                        <input type="file" id="rpFileInput" accept=".rpp,.rpp-bak,.txt">
+                        <div style="font-weight: 700; font-size: 13px;">.rpp / .rpp-bak ファイルをドロップ、または選択</div>
+                        <div style="color: var(--text-muted); font-size: 11px; margin-top: 4px;">または下のテキストエリアに直接RPPテキストをペーストしてください</div>
+                    </div>
+
+                    <!-- SETTINGS & QUICK PRESETS -->
+                    <div class="panel" style="background-color: var(--bg-panel-secondary); padding: 12px; margin-bottom: 12px;">
+                        <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); margin-bottom: 8px;">パス変換設定</div>
+                        
+                        <div style="display: flex; flex-direction: column; gap: 8px; font-size: 11.5px;">
+                            <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                                <input type="checkbox" id="rpOptOwner" checked>
+                                <span><strong>ユーザー名を「owner」に一括統一</strong> (<code>C:\Users\任意のユーザー名\</code> → <code>C:\Users\owner\</code> / <code>/Users/任意のユーザー名/</code> → <code>/Users/owner/</code>)</span>
+                            </label>
+
+                            <div style="display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px;">
+                                <span style="font-weight: 700;">カスタムパス置換:</span>
+                                <input type="text" id="rpOldPath" placeholder="置換前 (例: D:\OldSamples)" style="width: 180px; padding: 4px 8px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color);">
+                                <span>→</span>
+                                <input type="text" id="rpNewPath" placeholder="置換後 (例: E:\NewSamples)" style="width: 180px; padding: 4px 8px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color);">
+                            </div>
+
+                            <div style="display: flex; gap: 6px; margin-top: 6px; flex-wrap: wrap;">
+                                <button id="rpApplyBtn" class="btn btn-primary" style="padding: 5px 12px; font-size: 11.5px;">パス変換を実行</button>
+                                <button id="rpCopyBtn" class="btn" style="padding: 5px 12px; font-size: 11.5px;">変換後テキストをコピー</button>
+                                <button id="rpDownloadBtn" class="btn btn-primary" style="padding: 5px 12px; font-size: 11.5px; background-color: var(--accent-green);">.rpp ファイル保存</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PATH STATS & SUMMARY -->
+                    <div id="rpSummaryBox" class="panel hidden" style="background-color: var(--bg-panel-secondary); padding: 8px 12px; margin-bottom: 10px; font-size: 11.5px; display: flex; gap: 16px; align-items: center; flex-wrap: wrap;">
+                        <div>検出ファイルパス数: <strong id="rpTotalPaths" style="color: var(--accent-cyan);">0</strong> 件</div>
+                        <div>置換変更数: <strong id="rpReplacedPaths" style="color: var(--accent-green);">0</strong> 件</div>
+                        <div id="rpFileNameTag" style="color: var(--text-muted); font-size: 11px; margin-left: auto;">-</div>
+                    </div>
+
+                    <!-- RPP EDITOR TEXTAREA -->
+                    <div class="grid-2" style="gap: 10px;">
+                        <div>
+                            <div style="font-weight: 700; font-size: 11.5px; color: var(--text-heading); margin-bottom: 4px;">元RPPテキスト / 入力</div>
+                            <textarea id="rpInputText" style="height: 320px; font-size: 12px; font-family: monospace; line-height: 1.4; padding: 8px 10px;" placeholder="<REAPER_PROJECT 0.1 &#10;  RIPPLE 0 &#10;  FILE &quot;C:\Users\John\Documents\REAPER\song.wav&quot;&#10;..."></textarea>
+                        </div>
+                        <div>
+                            <div style="font-weight: 700; font-size: 11.5px; color: var(--text-heading); margin-bottom: 4px;">変換後RPPテキスト</div>
+                            <textarea id="rpOutputText" readonly style="height: 320px; font-size: 12px; font-family: monospace; line-height: 1.4; padding: 8px 10px; background-color: var(--bg-panel-secondary);" placeholder="変換結果がここにリアルタイム表示されます"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TOOL: 文字化けシミュレータ＆復元 -->
+            <section id="view-mojibake" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">文字化けシミュレータ＆自動復元 (Shift_JIS / UTF-8 / EUC-JP / Windows-1252)</span>
+                    </div>
+
+                    <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
+                        エンコーディングの不一致で発生した文字化け（例: <code style="color: var(--accent-red);">æ—¥æœ¬èª</code> や <code style="color: var(--accent-red);">ï½½ï¾ï½½</code>）を解読・復元したり、テスト用に意図的な文字化けを生成・シミュレートします。
+                    </div>
+
+                    <!-- TAB SELECTOR -->
+                    <div style="display: flex; gap: 4px; margin-bottom: 12px; border-bottom: 1px solid var(--border-color); padding-bottom: 8px;">
+                        <button id="mbTabFixer" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px;">文字化け復元 (解読)</button>
+                        <button id="mbTabSimulator" class="btn" style="padding: 6px 14px; font-size: 12px;">文字化け生成 (シミュレータ)</button>
+                    </div>
+
+                    <!-- FIXER MODE -->
+                    <div id="mbFixerPanel">
+                        <div class="mb-2">
+                            <label style="font-weight: 700; color: var(--text-heading); font-size: 12px; display: block; margin-bottom: 4px;">解読したい文字化けテキストを入力</label>
+                            <textarea id="mbFixerInput" style="height: 90px; font-size: 14px; padding: 8px 10px;" placeholder="文字化けしたテキストをペーストしてください..."></textarea>
+                        </div>
+
+                        <div style="display: flex; gap: 8px; margin-bottom: 12px; align-items: center; flex-wrap: wrap;">
+                            <button id="mbFixerExecBtn" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px;">文字化けを解読・復元試行</button>
+                            <button id="mbFixerSample1" class="btn" style="padding: 4px 8px; font-size: 11px;">サンプルテキスト1</button>
+                            <button id="mbFixerSample2" class="btn" style="padding: 4px 8px; font-size: 11px;">サンプルテキスト2</button>
+                            <button id="mbFixerSample3" class="btn" style="padding: 4px 8px; font-size: 11px;">サンプルテキスト3</button>
+                            <button id="mbFixerSample4" class="btn" style="padding: 4px 8px; font-size: 11px;">サンプルテキスト4</button>
+                        </div>
+
+                        <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); margin-bottom: 6px;">復元候補一覧</div>
+                        <div id="mbFixerResults" style="display: flex; flex-direction: column; gap: 6px;">
+                            <!-- Candidate cards will be dynamically rendered here -->
+                        </div>
+                    </div>
+
+                    <!-- SIMULATOR MODE -->
+                    <div id="mbSimPanel" class="hidden">
+                        <div class="mb-2">
+                            <label style="font-weight: 700; color: var(--text-heading); font-size: 12px; display: block; margin-bottom: 4px;">元の日本語テキストを入力</label>
+                            <textarea id="mbSimInput" style="height: 90px; font-size: 14px; padding: 8px 10px;" placeholder="ここに正常な日本語を入力...">日本語文字化けテスト 2026</textarea>
+                        </div>
+
+                        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px; flex-wrap: wrap;">
+                            <div>
+                                <label style="font-size: 11px; color: var(--text-muted); display: block; margin-bottom: 2px;">エンコード不一致パターン:</label>
+                                <select id="mbSimPattern" style="padding: 5px 8px; font-size: 12px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color);">
+                                    <option value="utf8_as_latin1">UTF-8バイト列を Latin-1(Windows-1252) として表示 (例: æ—¥æœ¬èª)</option>
+                                    <option value="sjis_as_utf8">Shift_JISバイト列を UTF-8 として表示</option>
+                                    <option value="utf8_as_sjis">UTF-8バイト列を Shift_JIS として表示</option>
+                                    <option value="eucjp_as_utf8">EUC-JPバイト列を UTF-8 として表示</option>
+                                    <option value="utf8_as_eucjp">UTF-8バイト列を EUC-JP として表示</option>
+                                </select>
+                            </div>
+                            <button id="mbSimCopyBtn" class="btn btn-primary" style="padding: 6px 14px; font-size: 12px; margin-top: 14px;">結果をコピー</button>
+                        </div>
+
+                        <div>
+                            <label style="font-weight: 700; color: var(--text-heading); font-size: 12px; display: block; margin-bottom: 4px;">シミュレート生成された文字化けテキスト</label>
+                            <textarea id="mbSimOutput" readonly style="height: 100px; font-size: 14px; padding: 8px 10px; background-color: var(--bg-panel-secondary);" placeholder="生成結果"></textarea>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- TOOL: 日本語URLエンコード / デコード -->
+            <section id="view-url-codec" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <span class="panel-title">日本語URLエンコード / デコード (パーセントエンコード)</span>
+                    </div>
+
+                    <div style="font-size: 11.5px; color: var(--text-muted); margin-bottom: 12px; line-height: 1.5;">
+                        URLに含まれる日本語や特殊文字をパーセントエンコード（例: <code style="color: var(--accent-cyan);">日本語</code> → <code style="color: var(--accent-cyan);">%E6%97%A5%E6%9C%AC%E8%AA%9E</code>）に相互変換します。<br>
+                        「スマートURLエンコード」は、プロトコルやドメイン（<code style="color: var(--accent-amber);">https://...</code>）構造を維持したまま、パスやクエリ文字列内の日本語のみを安全にエンコードします。
+                    </div>
+
+                    <div style="display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <button id="urlSmartEncodeBtn" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px;">スマートURLエンコード (URL構造維持)</button>
+                        <button id="urlFullEncodeBtn" class="btn" style="padding: 6px 12px; font-size: 12px;">完全エンコード (encodeURIComponent)</button>
+                        <button id="urlDecodeBtn" class="btn btn-primary" style="padding: 6px 12px; font-size: 12px; background-color: var(--accent-purple);">URLデコード (decodeURIComponent)</button>
+                        <button id="urlClearBtn" class="btn btn-danger" style="padding: 6px 10px; font-size: 12px; margin-left: auto;">クリア</button>
+                    </div>
+
+                    <div class="grid-2 mb-3" style="gap: 10px;">
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="font-weight: 700; color: var(--text-heading); font-size: 12px; margin: 0;">入力テキスト / URL</label>
+                                <button id="urlSampleBtn" class="btn" style="padding: 2px 7px; font-size: 10.5px;">サンプル挿入</button>
+                            </div>
+                            <textarea id="urlInputText" style="height: 140px; font-size: 13px; padding: 8px 10px;" placeholder="URLまたは文字列を入力 (例: https://ja.wikipedia.org/wiki/メインページ?search=日本語テスト)...">https://ja.wikipedia.org/wiki/メインページ?search=日本語テスト#見出し</textarea>
+                        </div>
+                        <div>
+                            <div class="flex-between mb-1">
+                                <label style="font-weight: 700; color: var(--text-heading); font-size: 12px; margin: 0;">変換結果</label>
+                                <button id="urlCopyOutputBtn" class="btn btn-primary" style="padding: 2px 8px; font-size: 10.5px;">結果をコピー</button>
+                            </div>
+                            <textarea id="urlOutputText" readonly style="height: 140px; font-size: 13px; padding: 8px 10px; background-color: var(--bg-panel-secondary);" placeholder="変換結果がここに表示されます"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- URL QUERY PARAMS INSPECTOR -->
+                    <div id="urlParamsPanel" class="panel hidden" style="background-color: var(--bg-panel-secondary); padding: 10px 12px;">
+                        <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); margin-bottom: 6px;">URLクエリパラメーター解析結果</div>
+                        <div id="urlParamsTable" style="overflow-x: auto; font-size: 11.5px;"></div>
+                    </div>
+                </div>
+            </section>
+
+        </main>
+    </div>
+
+    <!-- TOAST NOTIFICATION CONTAINER -->
+    <div id="tcToast" class="tc-toast"></div>
+
+    <script type="module" src="/src/scripts/main.js"></script>
+</body>
+</html>

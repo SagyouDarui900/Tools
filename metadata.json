@@ -1,0 +1,6 @@
+{
+  "name": "ツール集",
+  "description": "完全オフライン・ブラウザ完結型のWebツール集（REAPERパス編集、文字化けシミュレータ＆復元、URLエンコード/デコード、特殊文字変換、文字数カウンター、Markdownエディタ、スプライト抽出、音素DB解析等）",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
