@@ -5974,11 +5974,20 @@ const convertPath = (rawText, fromPath, toPath) => {
 
         // Initialize new tools safely whether DOM is loading or already ready
         function initNewTools() {
-            initReaperPathEditor();
-            initMojibakeTool();
-            initUrlCodecTool();
-            initYtThumbTool();
-            initExpandUrlTool();
+            const initializers = [
+                initReaperPathEditor,
+                initMojibakeTool,
+                initUrlCodecTool,
+                initYtThumbTool,
+                initExpandUrlTool
+            ];
+            initializers.forEach(fn => {
+                try {
+                    if (typeof fn === 'function') fn();
+                } catch (e) {
+                    console.warn('Tool initialization skipped due to error:', e);
+                }
+            });
         }
 
         if (document.readyState === 'loading') {
