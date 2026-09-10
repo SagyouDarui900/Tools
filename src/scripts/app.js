@@ -14,6 +14,32 @@
         }
         window.showToast = showToast;
 
+        // Global HTML Escape Utility
+        function escapeHtml(str) {
+            if (str == null) return '';
+            return String(str).replace(/[&<>"']/g, m => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+            }[m]));
+        }
+        window.escapeHtml = escapeHtml;
+
+        // Global Safe URI Decoder (Fallback for deprecated unescape)
+        function safeDecodeURI(str) {
+            if (!str) return '';
+            try {
+                return decodeURIComponent(str.replace(/\+/g, ' '));
+            } catch {
+                return str.replace(/%([0-9A-Fa-f]{2})/g, (match, hex) => {
+                    try {
+                        return String.fromCharCode(parseInt(hex, 16));
+                    } catch {
+                        return match;
+                    }
+                });
+            }
+        }
+        window.safeDecodeURI = safeDecodeURI;
+
         // PDF.js Worker Initialization
         if (typeof pdfjsLib !== 'undefined') {
             pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -743,6 +769,15 @@
                     }
                 };
 
+                worker.onerror = (err) => {
+                    console.error('Spectrogram worker error:', err);
+                    showToast('音声合成処理中にエラーが発生しました');
+                    progressSection.classList.add('hidden');
+                    generateBtn.disabled = false;
+                    worker.terminate();
+                    URL.revokeObjectURL(workerUrl);
+                };
+
                 worker.postMessage({
                     pixels, W, H, duration, sampleRate: 44100, minFreq, maxFreq, scaleType, contrast
                 });
@@ -848,15 +883,25 @@
                 reader.readAsDataURL(file);
             }
 
-            // Canvas Click / Drag Event (座標正規化)
-            overlayCanvas.addEventListener('mousedown', (e) => {
-                if (!currentImg) return;
+            // Coordinate helper for mouse & touch
+            function getCanvasCoords(e) {
                 const rect = overlayCanvas.getBoundingClientRect();
                 const scaleX = overlayCanvas.width / rect.width;
                 const scaleY = overlayCanvas.height / rect.height;
+                const clientX = e.touches && e.touches.length > 0 ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches && e.touches.length > 0 ? e.touches[0].clientY : e.clientY;
 
-                const x = Math.floor((e.clientX - rect.left) * scaleX);
-                const y = Math.floor((e.clientY - rect.top) * scaleY);
+                return {
+                    x: Math.floor((clientX - rect.left) * scaleX),
+                    y: Math.floor((clientY - rect.top) * scaleY)
+                };
+            }
+
+            function handleCanvasStart(e) {
+                if (!currentImg) return;
+                if (e.type === 'touchstart') e.preventDefault(); // Prevent scrolling on touch drag
+
+                const { x, y } = getCanvasCoords(e);
 
                 if (isPipette) {
                     const p = ctxImg.getImageData(x, y, 1, 1).data;
@@ -874,21 +919,21 @@
                 currentX = x;
                 currentY = y;
                 isDragging = true;
-            });
+            }
 
-            overlayCanvas.addEventListener('mousemove', (e) => {
+            function handleCanvasMove(e) {
                 if (!isDragging || !currentImg) return;
-                const rect = overlayCanvas.getBoundingClientRect();
-                const scaleX = overlayCanvas.width / rect.width;
-                const scaleY = overlayCanvas.height / rect.height;
+                if (e.type === 'touchmove') e.preventDefault();
 
-                currentX = Math.floor((e.clientX - rect.left) * scaleX);
-                currentY = Math.floor((e.clientY - rect.top) * scaleY);
+                const { x, y } = getCanvasCoords(e);
+                currentX = x;
+                currentY = y;
                 renderOverlay();
-            });
+            }
 
-            overlayCanvas.addEventListener('mouseup', () => {
+            function handleCanvasEnd(e) {
                 if (!isDragging) return;
+                if (e && e.cancelable) e.preventDefault();
                 isDragging = false;
 
                 const rx = Math.max(0, Math.min(startX, currentX));
@@ -910,7 +955,21 @@
                         addSprite({ x: rx, y: ry, w: rw, h: rh });
                     }
                 }
+            }
+
+            // Mouse Events
+            overlayCanvas.addEventListener('mousedown', handleCanvasStart);
+            overlayCanvas.addEventListener('mousemove', handleCanvasMove);
+            overlayCanvas.addEventListener('mouseup', handleCanvasEnd);
+            window.addEventListener('mouseup', (e) => {
+                if (isDragging) handleCanvasEnd(e);
             });
+
+            // Touch Events (Mobile/Tablet support)
+            overlayCanvas.addEventListener('touchstart', handleCanvasStart, { passive: false });
+            overlayCanvas.addEventListener('touchmove', handleCanvasMove, { passive: false });
+            overlayCanvas.addEventListener('touchend', handleCanvasEnd, { passive: false });
+            overlayCanvas.addEventListener('touchcancel', () => { isDragging = false; renderOverlay(); });
 
             // ドラッグ範囲内の全不透明ピクセル（前景）の最小外接矩形を計算（火・光・複数小オブジェクト統合）
             function findDragFitBounds(rx, ry, rw, rh) {
@@ -1320,7 +1379,7 @@
                 if (sprites.length === 0) return;
                 isPlayingAnim = true;
                 if (animPlayBtn) {
-                    animPlayBtn.textContent = '■ 停止';
+                    animPlayBtn.textContent = '停止';
                     animPlayBtn.classList.remove('btn-primary');
                     animPlayBtn.classList.add('btn-danger');
                 }
@@ -1345,7 +1404,7 @@
                     animTimer = null;
                 }
                 if (animPlayBtn) {
-                    animPlayBtn.textContent = '▶ 再生';
+                    animPlayBtn.textContent = '再生';
                     animPlayBtn.classList.remove('btn-danger');
                     animPlayBtn.classList.add('btn-primary');
                 }
@@ -1391,7 +1450,11 @@
 
             // ZIP連番エクスポート
             exportBtn.addEventListener('click', async () => {
-                if (!sprites.length || typeof JSZip === 'undefined') return;
+                if (!sprites.length) return;
+                if (typeof JSZip === 'undefined') {
+                    showToast('ZIPライブラリの読み込みに失敗しました');
+                    return;
+                }
                 const zip = new JSZip();
                 const baseName = filenameInput.value.trim() || 'sprite';
 
@@ -1586,7 +1649,10 @@
 
                             const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                             const bounds = getBoundingBox(imgData);
-                            if (!bounds) return;
+                            if (!bounds) {
+                                showToast(`${file.name}: 削減可能な不透明ピクセルが見つかりませんでした`);
+                                return;
+                            }
 
                             const cropCanvas = document.createElement('canvas');
                             cropCanvas.width = bounds.w;
@@ -1928,6 +1994,7 @@
                     }
                     showResults();
                 } catch (err) {
+                    showToast('PDFの処理中にエラーが発生しました: ' + (err.message || '読み込み失敗'));
                 } finally {
                     progressSection.classList.add('hidden');
                 }
@@ -1978,6 +2045,15 @@
             function showResults() {
                 resultSection.classList.remove('hidden');
                 document.getElementById('pdfResultCount').textContent = `抽出結果 (${generatedImages.length}件)`;
+
+                if (generatedImages.length === 0) {
+                    gallery.innerHTML = `
+                        <div style="grid-column: 1 / -1; text-align: center; padding: 24px 12px; color: var(--text-muted); font-size: 13px;">
+                            抽出可能な画像が見つかりませんでした。「全ページを画像に変換」モードをお試しください。
+                        </div>
+                    `;
+                    return;
+                }
 
                 generatedImages.forEach(img => {
                     const card = document.createElement('div');
@@ -2410,7 +2486,7 @@
                         progressBar.style.backgroundColor = 'var(--accent-primary)';
                     }
                 } else if (diff === 0) {
-                    progressDiffEl.textContent = `🎉 目標ちょうど達成！`;
+                    progressDiffEl.textContent = `目標達成`;
                     progressDiffEl.style.color = 'var(--accent-green)';
                     progressDiffEl.style.borderColor = 'rgba(52, 211, 153, 0.4)';
                     progressDiffEl.style.backgroundColor = 'rgba(52, 211, 153, 0.15)';
@@ -2424,7 +2500,7 @@
                         progressDiffEl.style.backgroundColor = 'rgba(52, 211, 153, 0.12)';
                         progressBar.style.backgroundColor = 'var(--accent-green)';
                     } else {
-                        progressDiffEl.textContent = `⚠️ 目標を +${over} 字 超過`;
+                        progressDiffEl.textContent = `目標を +${over} 字 超過`;
                         progressDiffEl.style.color = 'var(--accent-red)';
                         progressDiffEl.style.borderColor = 'rgba(248, 113, 113, 0.4)';
                         progressDiffEl.style.backgroundColor = 'rgba(248, 113, 113, 0.12)';
@@ -2487,27 +2563,27 @@
                     kanjiRateBadge.style.color = 'var(--text-muted)';
                     kanjiRateBadge.style.borderColor = 'var(--border-color)';
                     kanjiRateBadge.style.backgroundColor = 'transparent';
-                    readabilityBox.innerHTML = `💡 <strong>レポート読みやすさ診断:</strong> 本文を入力すると漢字率・文章バランスのアドバイスが表示されます。`;
+                    readabilityBox.innerHTML = `<strong>文章可読性診断:</strong> 本文を入力すると漢字率や文章バランスのアドバイスが表示されます。`;
                 } else if (kanjiRate >= 25 && kanjiRate <= 35) {
                     kanjiRateBadge.style.color = 'var(--accent-green)';
                     kanjiRateBadge.style.borderColor = 'rgba(52, 211, 153, 0.4)';
                     kanjiRateBadge.style.backgroundColor = 'rgba(52, 211, 153, 0.12)';
-                    readabilityBox.innerHTML = `✨ <strong>適正 (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 大学のレポート・課題として最も読みやすく、洗練された黄金バランスです。`;
+                    readabilityBox.innerHTML = `<strong>適正 (漢字率 ${kanjiRate.toFixed(1)}%):</strong> レポート・文章として最も読みやすく、バランスの取れた漢字率です。`;
                 } else if (kanjiRate > 35 && kanjiRate <= 45) {
                     kanjiRateBadge.style.color = 'var(--accent-amber)';
                     kanjiRateBadge.style.borderColor = 'rgba(251, 191, 36, 0.4)';
                     kanjiRateBadge.style.backgroundColor = 'rgba(251, 191, 36, 0.12)';
-                    readabilityBox.innerHTML = `📘 <strong>やや硬め (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 学術論文や論理的なレポートに適したトーンです。難読語は適宜ひらがなに開くと親切です。`;
+                    readabilityBox.innerHTML = `<strong>やや硬め (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 学術論文や論理的なレポートに適したトーンです。`;
                 } else if (kanjiRate > 45) {
                     kanjiRateBadge.style.color = 'var(--accent-red)';
                     kanjiRateBadge.style.borderColor = 'rgba(248, 113, 113, 0.4)';
                     kanjiRateBadge.style.backgroundColor = 'rgba(248, 113, 113, 0.12)';
-                    readabilityBox.innerHTML = `⚠️ <strong>漢字多め (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 文章が硬く難解な印象を与える可能性があります。「〜と言う」「〜の時」「〜頂く」など形式名詞・接続詞をひらがなにするのがおすすめです。`;
+                    readabilityBox.innerHTML = `<strong>漢字多め (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 文章が硬く難解な印象を与える可能性があります。一部接続詞や補助動詞をひらがなにすると読みやすくなります。`;
                 } else {
                     kanjiRateBadge.style.color = 'var(--accent-primary)';
                     kanjiRateBadge.style.borderColor = 'rgba(56, 189, 248, 0.4)';
                     kanjiRateBadge.style.backgroundColor = 'rgba(56, 189, 248, 0.12)';
-                    readabilityBox.innerHTML = `📝 <strong>ひらがな多め (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 読みやすい反面、大学レポートとしては少し口語的・平易に見える場合があります。適度に漢字熟語を取り入れると引き締まります。`;
+                    readabilityBox.innerHTML = `<strong>ひらがな多め (漢字率 ${kanjiRate.toFixed(1)}%):</strong> 平易で読みやすい反面、フォーマルな文章としては少し口語的に見える場合があります。`;
                 }
 
                 // 5. Trigger debounced auto-save
@@ -2624,10 +2700,6 @@
                     item.appendChild(btnGroup);
                     snapshotListEl.appendChild(item);
                 });
-            }
-
-            function escapeHtml(str) {
-                return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
             }
 
             // EVENT LISTENERS
@@ -2996,15 +3068,6 @@
                 }
             }
 
-            // Toast helper
-            function showToast(msg) {
-                const toast = document.getElementById('tcToast');
-                if (!toast) return;
-                toast.textContent = msg;
-                toast.classList.add('show');
-                setTimeout(() => toast.classList.remove('show'), 2200);
-            }
-
             // Templates Map
             const templates = {
                 layout_callouts: `# GitHub コールアウト & 囲み枠レイアウト
@@ -3040,14 +3103,14 @@
 
 ### ステータスカード型配置
 
-| 🟢 システム状態 | ⚡ 処理パフォーマンス | 🔒 セキュリティ |
+| システム状態 | 処理パフォーマンス | セキュリティ |
 | :---: | :---: | :---: |
 | **正常稼働中** | **0.02 秒** 応答 | **完全ローカル** 実行 |`,
 
                 layout_accordion: `# 折りたたみ (アコーディオン) レイアウト
 
 <details>
-<summary><b>▶ セクション1: 詳細設定を開く (クリックで展開)</b></summary>
+<summary><b>セクション1: 詳細設定を開く (クリックで展開)</b></summary>
 
 ### 展開時のコンテンツ
 ここに隠されていた詳細情報や設定項目を記述します。
@@ -3063,7 +3126,7 @@
 </details>
 
 <details>
-<summary><b>▶ セクション2: よくある質問 (FAQ)</b></summary>
+<summary><b>セクション2: よくある質問 (FAQ)</b></summary>
 
 > **Q: データの保存先はどこですか？**  
 > A: すべてブラウザローカル（LocalStorage）に保存されます。外部送信はありません。
@@ -3076,7 +3139,7 @@
 ---
 
 ### クイックナビゲーション
-[ [📄 ドキュメント](#) ] &nbsp;&nbsp; [ [⚡ ライブデモ](#) ] &nbsp;&nbsp; [ [🐛 不具合報告](#) ]
+[ [ドキュメント](#) ] &nbsp;&nbsp; [ [ライブデモ](#) ] &nbsp;&nbsp; [ [不具合報告](#) ]
 
 ---
 
@@ -3119,7 +3182,7 @@
 - [ ] **追加拡張**: オプションプラグイン構築中
 
 ### 3. ボタン風リンク & アクション
-[ [📄 ドキュメントを開く](https://example.com) ] &nbsp;&nbsp; [ [⚡ デモを実行](https://example.com) ]`,
+[ [ドキュメントを開く](https://example.com) ] &nbsp;&nbsp; [ [デモを実行](https://example.com) ]`,
 
                 layout_tables: `# データ比較・各種揃えテーブルレイアウト
 
@@ -3226,6 +3289,16 @@ const convertPath = (rawText, fromPath, toPath) => {
                     return `<pre><button class="code-copy-btn" onclick="navigator.clipboard.writeText(this.nextElementSibling.innerText).then(() => { this.textContent = 'コピー完了'; setTimeout(() => this.textContent = 'コピー', 1500); })">コピー</button><code${codeAttr}>${codeContent}</code></pre>`;
                 });
 
+                // 7. Sanitize potentially harmful scripts / inline event handlers
+                html = html.replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
+                           .replace(/\bon\w+\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, (match) => {
+                               if (match.includes('navigator.clipboard.writeText') || match.includes('classList.toggle')) {
+                                   return match;
+                               }
+                               return '';
+                           })
+                           .replace(/href\s*=\s*["']\s*javascript:[^"']*["']/gi, 'href="#"');
+
                 return html;
             }
 
@@ -3271,7 +3344,7 @@ const convertPath = (rawText, fromPath, toPath) => {
                     discordMeterText.textContent = `${totalChars.toLocaleString()} / 2,000 文字 (${totalChars - DISCORD_LIMIT}字 超過)`;
                     discordMeterBar.style.width = '100%';
                     discordMeterBar.style.backgroundColor = 'var(--accent-red)';
-                    discordStatusBadge.textContent = `⚠️ ${postCount}枠に分割が必要`;
+                    discordStatusBadge.textContent = `${postCount}枠に分割が必要`;
                     discordStatusBadge.style.color = 'var(--accent-red)';
                     discordStatusBadge.style.borderColor = 'rgba(248, 113, 113, 0.4)';
                     discordStatusBadge.style.backgroundColor = 'rgba(248, 113, 113, 0.12)';
@@ -3284,7 +3357,7 @@ const convertPath = (rawText, fromPath, toPath) => {
                 try {
                     localStorage.setItem('workspace_markdown_draft', text);
                     if (saveStatus) {
-                        saveStatus.textContent = '🟢 自動保存: 完了';
+                        saveStatus.textContent = '自動保存: 完了';
                         saveStatus.style.color = 'var(--accent-green)';
                     }
                 } catch (e) {
@@ -3751,14 +3824,7 @@ const convertPath = (rawText, fromPath, toPath) => {
             const clearBtn = document.getElementById('ufClearBtn');
 
             // Toast helper
-            function ufToast(msg) {
-                const toast = document.getElementById('tcToast');
-                if (toast) {
-                    toast.textContent = msg;
-                    toast.classList.add('show');
-                    setTimeout(() => toast.classList.remove('show'), 2000);
-                }
-            }
+            const ufToast = showToast;
 
             // --- UNICODE MAP BUILDERS ---
             function createOffsetMap(normalChars, startCodePoint, exceptions = {}) {
@@ -4662,6 +4728,7 @@ const convertPath = (rawText, fromPath, toPath) => {
             const applyBtn = document.getElementById('rpApplyBtn');
             const copyBtn = document.getElementById('rpCopyBtn');
             const downloadBtn = document.getElementById('rpDownloadBtn');
+            const resetBtn = document.getElementById('rpResetBtn');
             const summaryBox = document.getElementById('rpSummaryBox');
             const totalPathsEl = document.getElementById('rpTotalPaths');
             const replacedPathsEl = document.getElementById('rpReplacedPaths');
@@ -4673,6 +4740,10 @@ const convertPath = (rawText, fromPath, toPath) => {
 
             function processRpp() {
                 const text = inputText.value;
+                if (resetBtn) {
+                    resetBtn.classList.toggle('hidden', !text.trim());
+                }
+
                 if (!text.trim()) {
                     outputText.value = '';
                     if (summaryBox) summaryBox.classList.add('hidden');
@@ -4789,6 +4860,20 @@ const convertPath = (rawText, fromPath, toPath) => {
                     document.body.removeChild(a);
                     URL.revokeObjectURL(url);
                     showToast(`「${a.download}」をダウンロードしました`);
+                });
+            }
+
+            if (resetBtn) {
+                resetBtn.addEventListener('click', () => {
+                    inputText.value = '';
+                    outputText.value = '';
+                    if (oldPathInput) oldPathInput.value = '';
+                    if (newPathInput) newPathInput.value = '';
+                    if (summaryBox) summaryBox.classList.add('hidden');
+                    resetBtn.classList.add('hidden');
+                    loadedFileName = 'project.rpp';
+                    if (fileInput) fileInput.value = '';
+                    showToast('入力をクリアしました');
                 });
             }
         }
@@ -5117,21 +5202,23 @@ const convertPath = (rawText, fromPath, toPath) => {
                 paramsPanel.classList.add('hidden');
             }
 
-            if (smartBtn) {
-                smartBtn.addEventListener('click', () => {
-                    const text = inputEl.value.trim();
-                    if (!text) { outputEl.value = ''; if (paramsPanel) paramsPanel.classList.add('hidden'); return; }
+            function runSmartEncode(showToastNotification = true) {
+                const text = inputEl.value.trim();
+                if (!text) { outputEl.value = ''; if (paramsPanel) paramsPanel.classList.add('hidden'); return; }
 
-                    try {
-                        const encoded = encodeURI(text);
-                        outputEl.value = encoded;
-                        inspectQueryParams(text);
-                        showToast('スマートURLエンコードを完了しました');
-                    } catch (e) {
-                        outputEl.value = encodeURIComponent(text);
-                        showToast('エンコードを完了しました');
-                    }
-                });
+                try {
+                    const encoded = encodeURI(text);
+                    outputEl.value = encoded;
+                    inspectQueryParams(text);
+                    if (showToastNotification) showToast('スマートURLエンコードを完了しました');
+                } catch (e) {
+                    outputEl.value = encodeURIComponent(text);
+                    if (showToastNotification) showToast('エンコードを完了しました');
+                }
+            }
+
+            if (smartBtn) {
+                smartBtn.addEventListener('click', () => runSmartEncode(true));
             }
 
             if (fullBtn) {
@@ -5149,13 +5236,15 @@ const convertPath = (rawText, fromPath, toPath) => {
                     const text = inputEl.value.trim();
                     if (!text) { outputEl.value = ''; if (paramsPanel) paramsPanel.classList.add('hidden'); return; }
                     try {
-                        const decoded = decodeURIComponent(text);
+                        const decoded = decodeURIComponent(text.replace(/\+/g, ' '));
                         outputEl.value = decoded;
                         inspectQueryParams(decoded);
                         showToast('URLデコードを完了しました');
                     } catch(e) {
+                        const fallbackDecoded = safeDecodeURI(text);
+                        outputEl.value = fallbackDecoded;
+                        inspectQueryParams(fallbackDecoded);
                         showToast('デコードを完了しました');
-                        outputEl.value = unescape(text);
                     }
                 });
             }
@@ -5179,19 +5268,724 @@ const convertPath = (rawText, fromPath, toPath) => {
             if (sampleBtn) {
                 sampleBtn.addEventListener('click', () => {
                     inputEl.value = 'https://ja.wikipedia.org/wiki/メインページ?search=日本語テスト&category=音楽#見出し';
-                    if (smartBtn) smartBtn.click();
+                    runSmartEncode(true);
                 });
             }
 
-            if (smartBtn) smartBtn.click();
+            let codecDebounce = null;
+            inputEl.addEventListener('input', () => {
+                clearTimeout(codecDebounce);
+                codecDebounce = setTimeout(() => {
+                    runSmartEncode(false);
+                }, 300);
+            });
+
+            // 初回ロード時はトースト通知を出さずにサイレント実行
+            runSmartEncode(false);
         }
 
-        // Initialize new tools when DOM is ready
-        document.addEventListener('DOMContentLoaded', () => {
+        // --------------------------------------------------------------------------
+        // YOUTUBE THUMBNAIL EXTRACTOR LOGIC
+        // --------------------------------------------------------------------------
+        function initYtThumbTool() {
+            const inputEl = document.getElementById('ytThumbInput');
+            const extractBtn = document.getElementById('ytThumbExtractBtn');
+            const sampleBtn = document.getElementById('ytThumbSampleBtn');
+            const clearBtn = document.getElementById('ytThumbClearBtn');
+            const countBadge = document.getElementById('ytThumbCountBadge');
+            const zipAllBtn = document.getElementById('ytThumbZipAllBtn');
+            const resultsContainer = document.getElementById('ytThumbResultsContainer');
+
+            if (!inputEl || !resultsContainer) return;
+
+            let currentVideosData = [];
+
+            // Extract Video IDs from text
+            function extractYouTubeIds(text) {
+                if (!text) return [];
+                const lines = text.split(/[\r\n\s,]+/);
+                const ids = [];
+                const regExp = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?|shorts|live)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+                
+                lines.forEach(line => {
+                    const str = line.trim();
+                    if (!str) return;
+                    if (/^[a-zA-Z0-9_-]{11}$/.test(str)) {
+                        if (!ids.includes(str)) ids.push(str);
+                    } else {
+                        const match = str.match(regExp);
+                        if (match && match[1] && !ids.includes(match[1])) {
+                            ids.push(match[1]);
+                        }
+                    }
+                });
+                return ids;
+            }
+
+            // Fetch oEmbed title
+            async function fetchVideoTitle(videoId) {
+                try {
+                    const res = await fetch(`https://www.youtube.com/oembed?url=https://www.youtube.com/watch?v=${videoId}&format=json`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        return { title: data.title, author: data.author_name };
+                    }
+                } catch(e) {}
+                return { title: `YouTube Video (${videoId})`, author: '' };
+            }
+
+            // Check image availability (e.g. maxresdefault dummy 120x90 check)
+            function checkImageDimensions(url) {
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.onload = () => {
+                        resolve({ width: img.naturalWidth || img.width, height: img.naturalHeight || img.height, valid: (img.naturalWidth || img.width) > 120 });
+                    };
+                    img.onerror = () => {
+                        resolve({ width: 0, height: 0, valid: false });
+                    };
+                    img.src = url;
+                });
+            }
+
+            // Main extraction process
+            async function runExtraction(userTriggered = false) {
+                const rawText = inputEl.value.trim();
+                const videoIds = extractYouTubeIds(rawText);
+
+                resultsContainer.innerHTML = '';
+                currentVideosData = [];
+
+                if (videoIds.length === 0) {
+                    if (countBadge) countBadge.textContent = '';
+                    if (zipAllBtn) zipAllBtn.disabled = true;
+                    if (userTriggered) showToast('有効なYouTube URLまたは動画IDが見つかりませんでした');
+                    resultsContainer.innerHTML = `
+                        <div style="text-align: center; padding: 32px 16px; color: var(--text-muted); background-color: var(--bg-panel-secondary); border-radius: 4px; border: 1px dashed var(--border-color);">
+                            <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">URLを入力してサムネイルを取得</div>
+                            <div style="font-size: 11.5px; margin-top: 4px;">YouTubeの動画URL、Shorts、または動画IDを上に貼り付けてください</div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                if (countBadge) countBadge.textContent = `${videoIds.length}件の動画を解析中...`;
+
+                for (let i = 0; i < videoIds.length; i++) {
+                    const id = videoIds[i];
+                    
+                    // URLs
+                    const maxresJpg = `https://img.youtube.com/vi/${id}/maxresdefault.jpg`;
+                    const sdJpg = `https://img.youtube.com/vi/${id}/sddefault.jpg`;
+                    const hqJpg = `https://img.youtube.com/vi/${id}/hqdefault.jpg`;
+                    const mqJpg = `https://img.youtube.com/vi/${id}/mqdefault.jpg`;
+
+                    const maxresWebp = `https://i.ytimg.com/vi_webp/${id}/maxresdefault.webp`;
+                    const hqWebp = `https://i.ytimg.com/vi_webp/${id}/hqdefault.webp`;
+
+                    // Title & maxres check in parallel
+                    const [meta, maxresCheck, sdCheck, hqCheck] = await Promise.all([
+                        fetchVideoTitle(id),
+                        checkImageDimensions(maxresJpg),
+                        checkImageDimensions(sdJpg),
+                        checkImageDimensions(hqJpg)
+                    ]);
+
+                    const bestJpg = maxresCheck.valid ? maxresJpg : (sdCheck.valid ? sdJpg : hqJpg);
+                    const bestWebp = maxresCheck.valid ? maxresWebp : hqWebp;
+                    const bestResolutionLabel = maxresCheck.valid ? `最高画質 (1920x1080)` : (sdCheck.valid ? `高画質 (640x480)` : `標準 (480x360)`);
+
+                    const videoItem = {
+                        id,
+                        title: meta.title,
+                        author: meta.author,
+                        hasMaxRes: maxresCheck.valid,
+                        bestJpg,
+                        bestWebp,
+                        maxresCheck,
+                        sdCheck,
+                        hqCheck,
+                        maxresJpg,
+                        sdJpg,
+                        hqJpg,
+                        mqJpg,
+                        maxresWebp,
+                        hqWebp
+                    };
+
+                    currentVideosData.push(videoItem);
+
+                    renderVideoCard(videoItem);
+                }
+
+                if (countBadge) countBadge.textContent = `${videoIds.length}件の動画からサムネイルを取得しました`;
+                if (zipAllBtn) zipAllBtn.disabled = false;
+                if (userTriggered) showToast(`${videoIds.length}件のサムネイル画像を取得しました`);
+            }
+
+            // Render single video card UI
+            function renderVideoCard(item) {
+                const card = document.createElement('div');
+                card.className = 'panel';
+                card.style.backgroundColor = 'var(--bg-panel)';
+                card.style.border = '1px solid var(--border-color)';
+                card.style.borderRadius = '6px';
+                card.style.padding = '14px';
+
+                const defaultJpg = item.bestJpg;
+
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 12px; flex-wrap: wrap;">
+                        <div style="flex: 1; min-width: 240px;">
+                            <div style="font-weight: 700; font-size: 14px; color: var(--text-heading); line-height: 1.4; margin-bottom: 4px;">
+                                ${escapeHtml(item.title)}
+                            </div>
+                            <div style="font-size: 12px; color: var(--text-muted); display: flex; align-items: center; gap: 10px;">
+                                <span>${item.author ? '投稿者: ' + escapeHtml(item.author) : ''}</span>
+                                <span>ID: <code style="color: var(--accent-primary); font-weight: 600;">${item.id}</code></span>
+                            </div>
+                        </div>
+                        <a href="https://www.youtube.com/watch?v=${item.id}" target="_blank" class="btn" style="padding: 4px 10px; font-size: 11.5px; display: inline-flex; align-items: center; gap: 4px;">
+                            YouTubeで動画を開く ↗
+                        </a>
+                    </div>
+
+                    <div style="display: grid; grid-template-columns: minmax(280px, 1fr) 280px; gap: 16px;" class="yt-card-grid">
+                        <!-- Left: Main Preview -->
+                        <div>
+                            <div style="position: relative; background-color: #000; border-radius: 4px; overflow: hidden; border: 1px solid var(--border-color); text-align: center;">
+                                <img id="previewImg_${item.id}" src="${defaultJpg}" style="max-width: 100%; max-height: 380px; object-fit: contain; vertical-align: middle;" alt="YouTube Thumbnail">
+                                <span id="resBadge_${item.id}" style="position: absolute; bottom: 8px; right: 8px; background: rgba(0,0,0,0.8); color: #fff; font-size: 11px; padding: 2px 8px; border-radius: 3px; font-weight: 600;">
+                                    ${item.hasMaxRes ? '1080p (最高画質)' : '480p (標準)'}
+                                </span>
+                            </div>
+                            <div style="display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap;">
+                                <button class="btn btn-primary btn-dl-jpg" style="padding: 5px 8px; font-size: 11.5px; flex: 1; min-width: 65px;">
+                                    JPG保存
+                                </button>
+                                <button class="btn btn-dl-png" style="padding: 5px 8px; font-size: 11.5px; background-color: var(--accent-green); color: #fff; flex: 1; min-width: 65px;">
+                                    PNG保存
+                                </button>
+                                <button class="btn btn-dl-webp" style="padding: 5px 8px; font-size: 11.5px; background-color: var(--accent-purple); color: #fff; flex: 1; min-width: 65px;">
+                                    WebP保存
+                                </button>
+                                <button class="btn btn-copy-img" style="padding: 5px 8px; font-size: 11.5px; min-width: 50px;" title="画像をクリップボードにコピー">
+                                    コピー
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Right: Quality Selector Buttons -->
+                        <div style="display: flex; flex-direction: column; gap: 8px; background-color: var(--bg-panel-secondary); padding: 10px; border-radius: 4px; border: 1px solid var(--border-color);">
+                            <div style="font-weight: 700; font-size: 11.5px; color: var(--text-heading); margin-bottom: 2px;">解像度・画質選択</div>
+
+                            <button class="btn q-btn ${item.hasMaxRes ? 'active' : ''}" data-url="${item.maxresJpg}" data-webp="${item.maxresWebp}" data-label="最高画質 (1080p)" data-valid="${item.hasMaxRes}" style="text-align: left; padding: 8px; font-size: 11.5px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600;">最高画質 (MaxRes / 1080p)</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">1920 × 1080 px</div>
+                                </div>
+                                <span class="badge" style="font-size: 10px; ${item.hasMaxRes ? 'background-color: rgba(34,197,94,0.15); color: #22c55e;' : 'opacity: 0.5;'}">
+                                    ${item.hasMaxRes ? '利用可能' : '非対応'}
+                                </span>
+                            </button>
+
+                            <button class="btn q-btn ${!item.hasMaxRes && item.sdCheck.valid ? 'active' : ''}" data-url="${item.sdJpg}" data-webp="${item.sdJpg}" data-label="高画質 (720p/SD)" data-valid="${item.sdCheck.valid}" style="text-align: left; padding: 8px; font-size: 11.5px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600;">高画質 (SD / 720p)</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">640 × 480 px</div>
+                                </div>
+                                <span class="badge" style="font-size: 10px;">${item.sdCheck.valid ? '640px' : '標準'}</span>
+                            </button>
+
+                            <button class="btn q-btn ${!item.hasMaxRes && !item.sdCheck.valid ? 'active' : ''}" data-url="${item.hqJpg}" data-webp="${item.hqWebp}" data-label="中画質 (HQ)" data-valid="true" style="text-align: left; padding: 8px; font-size: 11.5px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600;">中画質 (HQ)</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">480 × 360 px</div>
+                                </div>
+                                <span class="badge" style="font-size: 10px;">標準</span>
+                            </button>
+
+                            <button class="btn q-btn" data-url="${item.mqJpg}" data-webp="${item.mqJpg}" data-label="標準画質 (MQ)" data-valid="true" style="text-align: left; padding: 8px; font-size: 11.5px; display: flex; justify-content: space-between; align-items: center;">
+                                <div>
+                                    <div style="font-weight: 600;">小サイズ (MQ)</div>
+                                    <div style="font-size: 10px; color: var(--text-muted);">320 × 180 px</div>
+                                </div>
+                                <span class="badge" style="font-size: 10px;">軽量</span>
+                            </button>
+                        </div>
+                    </div>
+                `;
+
+                resultsContainer.appendChild(card);
+
+                // Event Listeners for this card
+                let selectedJpgUrl = defaultJpg;
+                let selectedWebpUrl = item.bestWebp;
+                let currentLabel = item.hasMaxRes ? '1080p' : 'HQ';
+
+                const mainImg = card.querySelector(`#previewImg_${item.id}`);
+                const resBadge = card.querySelector(`#resBadge_${item.id}`);
+
+                // Quality switch buttons
+                const qBtns = card.querySelectorAll('.q-btn');
+                qBtns.forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const url = btn.getAttribute('data-url');
+                        const webp = btn.getAttribute('data-webp');
+                        const label = btn.getAttribute('data-label');
+                        
+                        selectedJpgUrl = url;
+                        selectedWebpUrl = webp;
+                        currentLabel = label;
+
+                        if (mainImg) mainImg.src = url;
+                        if (resBadge) resBadge.textContent = label;
+
+                        qBtns.forEach(b => b.classList.remove('active'));
+                        btn.classList.add('active');
+                    });
+                });
+
+                // Download JPG
+                card.querySelector('.btn-dl-jpg').addEventListener('click', () => {
+                    downloadCanvasImage(selectedJpgUrl, `yt_thumb_${item.id}.jpg`, 'image/jpeg');
+                });
+
+                // Download PNG
+                card.querySelector('.btn-dl-png').addEventListener('click', () => {
+                    downloadCanvasImage(selectedJpgUrl, `yt_thumb_${item.id}.png`, 'image/png');
+                });
+
+                // Download WebP
+                card.querySelector('.btn-dl-webp').addEventListener('click', () => {
+                    downloadCanvasImage(selectedWebpUrl || selectedJpgUrl, `yt_thumb_${item.id}.webp`, 'image/webp');
+                });
+
+                // Copy Image
+                card.querySelector('.btn-copy-img').addEventListener('click', () => {
+                    copyImageToClipboard(selectedJpgUrl);
+                });
+            }
+
+            // Convert Blob to specific Image MIME Type (e.g. image/png)
+            async function convertBlobToFormat(blob, targetMimeType = 'image/png') {
+                if (!blob) return null;
+                if (blob.type === targetMimeType) return blob;
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    const blobUrl = URL.createObjectURL(blob);
+                    img.onload = () => {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.naturalWidth || img.width;
+                            canvas.height = img.naturalHeight || img.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            canvas.toBlob((converted) => {
+                                URL.revokeObjectURL(blobUrl);
+                                resolve(converted || blob);
+                            }, targetMimeType, 0.95);
+                        } catch (e) {
+                            URL.revokeObjectURL(blobUrl);
+                            resolve(blob);
+                        }
+                    };
+                    img.onerror = () => {
+                        URL.revokeObjectURL(blobUrl);
+                        resolve(blob);
+                    };
+                    img.src = blobUrl;
+                });
+            }
+
+            // Canvas / Proxy download helper with format conversion (JPG, PNG, WebP)
+            async function downloadCanvasImage(url, filename, format = 'image/jpeg') {
+                try {
+                    let blob = await fetchImageAsBlob(url);
+                    if (blob) {
+                        if (format !== blob.type) {
+                            blob = await convertBlobToFormat(blob, format);
+                        }
+                        const blobUrl = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = blobUrl;
+                        a.download = filename;
+                        a.click();
+                        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+                        showToast(`${filename} を保存しました`);
+                        return;
+                    }
+                } catch(e) {}
+
+                // Direct fallback
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                a.target = '_blank';
+                a.click();
+            }
+
+            // Copy Image to Clipboard as PNG
+            async function copyImageToClipboard(url) {
+                try {
+                    const blob = await fetchImageAsBlob(url);
+                    if (blob && navigator.clipboard && window.ClipboardItem) {
+                        const pngBlob = await convertBlobToFormat(blob, 'image/png');
+                        if (pngBlob) {
+                            await navigator.clipboard.write([new ClipboardItem({ 'image/png': pngBlob })]);
+                            showToast('サムネイル画像をクリップボードにコピーしました');
+                            return;
+                        }
+                    }
+                } catch(e) {}
+                showToast('クリップボードへの画像コピーに失敗しました');
+            }
+
+            // ZIP All Best Thumbnails (supports PNG, JPG, WebP)
+            if (zipAllBtn) {
+                zipAllBtn.addEventListener('click', async () => {
+                    if (!currentVideosData.length) return;
+                    if (!window.JSZip) {
+                        showToast('ZIPライブラリが読み込まれていません');
+                        return;
+                    }
+
+                    const zipFormatSelect = document.getElementById('ytThumbZipFormat');
+                    const targetExt = zipFormatSelect ? zipFormatSelect.value : 'png';
+                    const targetMime = targetExt === 'png' ? 'image/png' : (targetExt === 'webp' ? 'image/webp' : 'image/jpeg');
+
+                    showToast(`サムネイル一括ZIP (${targetExt.toUpperCase()}) を生成中...`);
+                    const zip = new JSZip();
+
+                    for (let i = 0; i < currentVideosData.length; i++) {
+                        const item = currentVideosData[i];
+                        const imgUrl = targetExt === 'webp' ? (item.bestWebp || item.bestJpg) : item.bestJpg;
+                        try {
+                            let blob = await fetchImageAsBlob(imgUrl);
+                            if (blob) {
+                                if (blob.type !== targetMime) {
+                                    blob = await convertBlobToFormat(blob, targetMime);
+                                }
+                                const cleanTitle = (item.title || item.id).replace(/[\\/:*?"<>|]/g, '_').substring(0, 40);
+                                zip.file(`${i + 1}_${cleanTitle}_${item.id}.${targetExt}`, blob);
+                            }
+                        } catch(e) {}
+                    }
+
+                    const zipContent = await zip.generateAsync({ type: 'blob' });
+                    const a = document.createElement('a');
+                    a.href = URL.createObjectURL(zipContent);
+                    a.download = `youtube_thumbnails_${targetExt}_${Date.now()}.zip`;
+                    a.click();
+                    showToast(`ZIPアーカイブ (${targetExt.toUpperCase()}) をダウンロードしました`);
+                });
+            }
+
+            async function fetchImageAsBlob(url) {
+                // 1. Try server proxy (bypasses YouTube CDN CORS restrictions)
+                try {
+                    const proxyRes = await fetch('/api/proxy-image?url=' + encodeURIComponent(url));
+                    if (proxyRes.ok) {
+                        return await proxyRes.blob();
+                    }
+                } catch(e) {}
+
+                // 2. Try direct fetch
+                try {
+                    const directRes = await fetch(url, { mode: 'cors' });
+                    if (directRes.ok) {
+                        return await directRes.blob();
+                    }
+                } catch(e) {}
+
+                // 3. Fallback to image element + canvas
+                return new Promise((resolve) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = () => {
+                        try {
+                            const canvas = document.createElement('canvas');
+                            canvas.width = img.naturalWidth || img.width;
+                            canvas.height = img.naturalHeight || img.height;
+                            const ctx = canvas.getContext('2d');
+                            ctx.drawImage(img, 0, 0);
+                            canvas.toBlob(blob => resolve(blob), 'image/jpeg', 0.95);
+                        } catch(err) {
+                            resolve(null);
+                        }
+                    };
+                    img.onerror = () => resolve(null);
+                    img.src = url;
+                });
+            }
+
+            // Extract Button Click
+            if (extractBtn) {
+                extractBtn.addEventListener('click', () => runExtraction(true));
+            }
+
+            // Sample Button Click
+            if (sampleBtn) {
+                sampleBtn.addEventListener('click', () => {
+                    inputEl.value = [
+                        'https://www.youtube.com/watch?v=dQw4w9WgXcQ',
+                        'https://youtu.be/L_LUpnjgPso',
+                        'https://www.youtube.com/shorts/5qap5aO4i9A'
+                    ].join('\n');
+                    runExtraction(true);
+                });
+            }
+
+            // Clear Button
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    inputEl.value = '';
+                    resultsContainer.innerHTML = '';
+                    if (countBadge) countBadge.textContent = '';
+                    if (zipAllBtn) zipAllBtn.disabled = true;
+                });
+            }
+
+            // Real-time input listener (debounced)
+            let debounceTimer = null;
+            inputEl.addEventListener('input', () => {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => {
+                    if (inputEl.value.trim()) {
+                        runExtraction(false);
+                    }
+                }, 400);
+            });
+
+            // Run initial empty prompt
+            runExtraction(false);
+        }
+
+        // --------------------------------------------------------------------------
+        // SHORT URL EXPANDER LOGIC
+        // --------------------------------------------------------------------------
+        function initExpandUrlTool() {
+            const inputEl = document.getElementById('expandUrlInput');
+            const runBtn = document.getElementById('expandUrlRunBtn');
+            const sampleBtn = document.getElementById('expandUrlSampleBtn');
+            const clearBtn = document.getElementById('expandUrlClearBtn');
+            const statusBadge = document.getElementById('expandUrlStatusBadge');
+            const copyAllBtn = document.getElementById('expandUrlCopyAllBtn');
+            const resultsContainer = document.getElementById('expandUrlResultsContainer');
+
+            if (!inputEl || !resultsContainer) return;
+
+            let lastExpandedFinalUrls = [];
+
+            async function expandSingleUrl(urlStr) {
+                let target = urlStr.trim();
+                if (!target) return null;
+                if (!/^https?:\/\//i.test(target)) {
+                    target = 'https://' + target;
+                }
+
+                // Primary: Internal Express API
+                try {
+                    const res = await fetch('/api/expand-url', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ url: target })
+                    });
+                    if (res.ok) {
+                        const data = await res.json();
+                        return data;
+                    }
+                } catch(e) {}
+
+                // Fallback: Public unshorten API
+                try {
+                    const res = await fetch(`https://unshorten.me/api/v2/unshorten?url=${encodeURIComponent(target)}`);
+                    if (res.ok) {
+                        const data = await res.json();
+                        if (data && data.unshortened_url) {
+                            return {
+                                originalUrl: target,
+                                finalUrl: data.unshortened_url,
+                                redirectCount: target !== data.unshortened_url ? 1 : 0,
+                                chain: [target, data.unshortened_url],
+                                status: 'success'
+                            };
+                        }
+                    }
+                } catch(e) {}
+
+                return {
+                    originalUrl: target,
+                    finalUrl: target,
+                    redirectCount: 0,
+                    chain: [target],
+                    status: 'fallback'
+                };
+            }
+
+            async function runExpandAll(userTriggered = false) {
+                const text = inputEl.value.trim();
+                if (!text) {
+                    resultsContainer.innerHTML = `
+                        <div style="text-align: center; padding: 32px 16px; color: var(--text-muted); background-color: var(--bg-panel-secondary); border-radius: 4px; border: 1px dashed var(--border-color);">
+                            <div style="font-size: 13px; font-weight: 600; color: var(--text-heading);">短縮URLを入力して解析開始</div>
+                            <div style="font-size: 11.5px; margin-top: 4px;">bit.ly, t.co, tinyurl などの短縮URLを上に貼り付けてください</div>
+                        </div>
+                    `;
+                    if (statusBadge) statusBadge.textContent = '';
+                    if (copyAllBtn) copyAllBtn.disabled = true;
+                    if (userTriggered) showToast('短縮URLを入力してください');
+                    return;
+                }
+
+                const urls = text.split(/[\r\n\s,]+/).map(u => u.trim()).filter(Boolean);
+                if (urls.length === 0) return;
+
+                resultsContainer.innerHTML = '';
+                lastExpandedFinalUrls = [];
+                if (statusBadge) statusBadge.textContent = `${urls.length}件の短縮URLを解析中...`;
+
+                for (let i = 0; i < urls.length; i++) {
+                    const res = await expandSingleUrl(urls[i]);
+                    if (res) {
+                        lastExpandedFinalUrls.push(res.finalUrl);
+                        renderResultCard(res, i + 1);
+                    }
+                }
+
+                if (statusBadge) statusBadge.textContent = `${urls.length}件の短縮URLの展開が完了しました`;
+                if (copyAllBtn) copyAllBtn.disabled = false;
+                if (userTriggered) showToast(`${urls.length}件の短縮URLを展開しました`);
+            }
+
+            function renderResultCard(data, index) {
+                const card = document.createElement('div');
+                card.className = 'panel';
+                card.style.backgroundColor = 'var(--bg-panel)';
+                card.style.border = '1px solid var(--border-color)';
+                card.style.borderRadius = '6px';
+                card.style.padding = '14px';
+
+                const isRedirected = data.redirectCount > 0;
+                let parsedFinal = null;
+                try {
+                    parsedFinal = new URL(data.finalUrl);
+                } catch(e) {}
+
+                card.innerHTML = `
+                    <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;">
+                        <div style="font-weight: 700; font-size: 13px; color: var(--text-heading); display: flex; align-items: center; gap: 8px;">
+                            <span style="background-color: var(--accent-primary); color: #fff; font-size: 11px; padding: 1px 6px; border-radius: 3px; font-weight: 700;">#${index}</span>
+                            <span style="word-break: break-all;">${escapeHtml(data.originalUrl)}</span>
+                        </div>
+                        <span class="badge" style="font-size: 11px; ${isRedirected ? 'background-color: rgba(34,197,94,0.15); color: #22c55e;' : 'opacity: 0.6;'}">
+                            ${isRedirected ? `転送あり (${data.redirectCount}回リダイレクト)` : 'ダイレクト'}
+                        </span>
+                    </div>
+
+                    <!-- FINAL DESTINATION -->
+                    <div style="background-color: var(--bg-panel-secondary); padding: 10px 12px; border-radius: 4px; border: 1px solid var(--border-color); margin-bottom: 10px;">
+                        <div style="font-size: 11px; color: var(--text-muted); font-weight: 600; margin-bottom: 4px;">展開後の到達URL (元の長URL)</div>
+                        <div style="font-size: 13.5px; font-weight: 700; color: var(--accent-primary); word-break: break-all; line-height: 1.4; font-family: monospace;">
+                            ${escapeHtml(data.finalUrl)}
+                        </div>
+                        ${parsedFinal ? `
+                            <div style="font-size: 11px; color: var(--text-muted); margin-top: 6px; display: flex; gap: 12px; flex-wrap: wrap;">
+                                <span>ドメイン: <strong style="color: var(--text-heading);">${escapeHtml(parsedFinal.hostname)}</strong></span>
+                                <span>プロトコル: <strong style="color: var(--text-heading);">${escapeHtml(parsedFinal.protocol)}</strong></span>
+                            </div>
+                        ` : ''}
+                    </div>
+
+                    <!-- REDIRECT CHAIN STEPS -->
+                    ${data.chain && data.chain.length > 1 ? `
+                        <div style="margin-bottom: 10px;">
+                            <details style="font-size: 12px; color: var(--text-muted);">
+                                <summary style="cursor: pointer; font-weight: 600; color: var(--text-heading); margin-bottom: 6px; user-select: none;">
+                                    リダイレクト経路履歴 (${data.chain.length}ステップ) を表示
+                                </summary>
+                                <div style="display: flex; flex-direction: column; gap: 4px; padding-left: 8px; border-left: 2px solid var(--accent-primary); margin-top: 6px;">
+                                    ${data.chain.map((stepUrl, sIdx) => `
+                                        <div style="font-family: monospace; font-size: 11.5px; word-break: break-all; padding: 2px 0;">
+                                            <span style="color: var(--text-muted); font-weight: 700;">Step ${sIdx + 1}:</span>
+                                            <span style="${sIdx === data.chain.length - 1 ? 'color: var(--accent-primary); font-weight: 700;' : 'color: var(--text-main);'}">${escapeHtml(stepUrl)}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </details>
+                        </div>
+                    ` : ''}
+
+                    <!-- ACTIONS -->
+                    <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+                        <button class="btn btn-primary btn-copy-final" style="padding: 4px 12px; font-size: 11.5px;">
+                            展開後URLをコピー
+                        </button>
+                        <a href="${escapeHtml(data.finalUrl)}" target="_blank" rel="noopener noreferrer" class="btn" style="padding: 4px 12px; font-size: 11.5px; text-decoration: none;">
+                            展開後ページを開く
+                        </a>
+                    </div>
+                `;
+
+                resultsContainer.appendChild(card);
+
+                // Copy button event
+                card.querySelector('.btn-copy-final').addEventListener('click', () => {
+                    navigator.clipboard.writeText(data.finalUrl).then(() => {
+                        showToast('展開後のURLをコピーしました');
+                    });
+                });
+            }
+
+            if (runBtn) runBtn.addEventListener('click', () => runExpandAll(true));
+
+            if (sampleBtn) {
+                sampleBtn.addEventListener('click', () => {
+                    inputEl.value = [
+                        'https://tinyurl.com/2p8a4u6r',
+                        'https://is.gd/S4Wz7E',
+                        'https://x.gd/8Xf2l'
+                    ].join('\n');
+                    runExpandAll(true);
+                });
+            }
+
+            if (clearBtn) {
+                clearBtn.addEventListener('click', () => {
+                    inputEl.value = '';
+                    resultsContainer.innerHTML = '';
+                    if (statusBadge) statusBadge.textContent = '';
+                    if (copyAllBtn) copyAllBtn.disabled = true;
+                    lastExpandedFinalUrls = [];
+                });
+            }
+
+            if (copyAllBtn) {
+                copyAllBtn.addEventListener('click', () => {
+                    if (!lastExpandedFinalUrls.length) return;
+                    navigator.clipboard.writeText(lastExpandedFinalUrls.join('\n')).then(() => {
+                        showToast(`${lastExpandedFinalUrls.length}件の展開後URLをコピーしました`);
+                    });
+                });
+            }
+
+            runExpandAll(false);
+        }
+
+        // Initialize new tools safely whether DOM is loading or already ready
+        function initNewTools() {
             initReaperPathEditor();
             initMojibakeTool();
             initUrlCodecTool();
-        });
+            initYtThumbTool();
+            initExpandUrlTool();
+        }
+
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initNewTools);
+        } else {
+            initNewTools();
+        }
 
         // Service Worker Registration for Offline / GitHub Pages
         if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {

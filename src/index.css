@@ -899,6 +899,9 @@
             #workspace {
                 padding: 12px 14px 44px 14px;
             }
+            .yt-card-grid {
+                grid-template-columns: 1fr !important;
+            }
             .panel {
                 padding: 14px;
                 margin-bottom: 14px;

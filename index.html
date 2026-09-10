@@ -48,9 +48,10 @@
                 <button id="sidebarCloseBtn" class="btn" style="padding: 4px 10px; font-size: 13px;" title="メニューを閉じる">✕ 閉じる</button>
             </div>
             <div class="nav-section-title">テキスト・文字列処理</div>
+            <button class="nav-btn" data-target="view-expand-url">短縮URL展開・復元</button>
             <button class="nav-btn" data-target="view-unicode-font">特殊文字・フォント変換 (Unicode)</button>
-            <button class="nav-btn" data-target="view-text-counter">文字数カウンター (大学レポート)</button>
-            <button class="nav-btn" data-target="view-markdown-editor">Markdown作成 (リアルタイム)</button>
+            <button class="nav-btn" data-target="view-text-counter">文字数カウンター</button>
+            <button class="nav-btn" data-target="view-markdown-editor">Markdownエディタ</button>
             <button class="nav-btn" data-target="view-mojibake">文字化けシミュレータ＆復元</button>
             <button class="nav-btn" data-target="view-url-codec">日本語URLエンコード / デコード</button>
             <button class="nav-btn" data-target="view-pdf-tools">PDF画像抽出・変換</button>
@@ -58,11 +59,12 @@
             <button class="nav-btn" data-target="view-romaji-kana">ローマ字かな変換</button>
 
             <div class="nav-section-title">DAW・音楽制作</div>
-            <button class="nav-btn" data-target="view-reaper-path">REAPER プロジェクトパス編集 (.rpp)</button>
+            <button class="nav-btn" data-target="view-reaper-path">REAPER パス編集 (.rpp)</button>
             <button class="nav-btn active" data-target="view-phoneme-db">音素データベース解析</button>
             <button class="nav-btn" data-target="view-spectrogram">スペクトログラム音声生成</button>
 
             <div class="nav-section-title">グラフィック・素材処理</div>
+            <button class="nav-btn" data-target="view-yt-thumb">YouTubeサムネイル取得・保存</button>
             <button class="nav-btn" data-target="view-sprite-cutter">スプライトシート切り出し</button>
             <button class="nav-btn" data-target="view-img-converter">画像形式一括変換</button>
             <button class="nav-btn" data-target="view-png-crop">透過画像余白自動削減</button>
@@ -1038,14 +1040,14 @@
 
                                 <!-- READABILITY DIAGNOSIS -->
                                 <div id="tcReadabilityBox" class="tc-readability-card">
-                                    <strong>💡 レポート読みやすさ診断:</strong> 本文を入力すると漢字率・文章バランスのアドバイスが表示されます。
+                                    <strong>文章可読性診断:</strong> 本文を入力すると漢字率や文章バランスのアドバイスが表示されます。
                                 </div>
                             </div>
 
                             <!-- SNAPSHOTS / HISTORY DRAFTS -->
                             <div class="panel" style="margin: 0; padding: 12px 14px; background-color: var(--bg-panel-secondary); border-radius: 4px;">
                                 <div class="flex-between mb-1">
-                                    <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">📌 下書きスナップショット履歴</label>
+                                    <label style="margin: 0; font-weight: 700; color: var(--text-heading); font-size: 12px;">下書きスナップショット履歴</label>
                                     <button id="tcSaveSnapshotBtn" class="btn" style="padding: 3px 9px; font-size: 10.5px;">スナップショット保存</button>
                                 </div>
                                 <div id="tcSnapshotList" style="max-height: 130px; overflow-y: auto; display: flex; flex-direction: column; gap: 5px; font-size: 11px; margin-top: 6px;">
@@ -1071,7 +1073,7 @@
                             </div>
                         </div>
                         <div style="display: flex; align-items: center; gap: 6px; flex-wrap: wrap;">
-                            <span id="mdSaveStatus" class="chip" style="font-size: 10px; color: var(--accent-green); margin-right: 2px;">🟢 自動保存: 有効</span>
+                            <span id="mdSaveStatus" class="chip" style="font-size: 10px; color: var(--accent-green); margin-right: 2px;">自動保存: 有効</span>
                             <div style="display: inline-flex; align-items: center; gap: 4px;">
                                 <select id="mdTemplateSelect" style="padding: 3px 6px; font-size: 11px; background-color: var(--bg-main); color: var(--text-heading); border: 1px solid var(--border-color); border-radius: 4px;">
                                     <option value="">-- 定型テンプレート --</option>
@@ -1394,6 +1396,97 @@
                     <div id="urlParamsPanel" class="panel hidden" style="background-color: var(--bg-panel-secondary); padding: 10px 12px;">
                         <div style="font-weight: 700; font-size: 12px; color: var(--text-heading); margin-bottom: 6px;">URLクエリパラメーター解析結果</div>
                         <div id="urlParamsTable" style="overflow-x: auto; font-size: 11.5px;"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL: SHORT URL EXPANDER (短縮URL復元・展開)
+                 ========================================================================== -->
+            <section id="view-expand-url" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>短縮URL復元・リダイレクト追跡ツール (URL Expander)</h2>
+                        <span class="badge">複数URL一括追跡対応</span>
+                    </div>
+                    <p class="mb-3" style="font-size: 12px; color: var(--text-muted);">
+                        bit.ly, t.co, tinyurl, is.gd, x.gd, amzn.to などの短縮URLを安全に解析し、実際の遷移先（元の長URL）や途中の経由地（リダイレクトチェーン）を安全に復元・可視化します。フィッシング対策やリンクの安全確認にご活用ください。
+                    </p>
+
+                    <!-- INPUT FORM -->
+                    <div class="mb-3" style="background-color: var(--bg-panel-secondary); padding: 12px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div class="flex-between mb-1">
+                            <label style="font-weight: 700; color: var(--text-heading); font-size: 12.5px; margin: 0;">短縮URL (複数可・改行区切り)</label>
+                            <div style="display: flex; gap: 6px;">
+                                <button id="expandUrlSampleBtn" class="btn" style="padding: 2px 8px; font-size: 11px;">サンプル挿入</button>
+                                <button id="expandUrlClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 11px;">クリア</button>
+                            </div>
+                        </div>
+                        <textarea id="expandUrlInput" style="height: 85px; font-size: 13px; padding: 8px 10px; font-family: monospace;" placeholder="短縮URLを入力 (例: https://tinyurl.com/2p8a4u6r または改行区切りで複数指定)..."></textarea>
+                        
+                        <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+                            <button id="expandUrlRunBtn" class="btn btn-primary" style="padding: 6px 16px; font-size: 12.5px; font-weight: 700;">
+                                短縮URLを展開する
+                            </button>
+                            <span id="expandUrlStatusBadge" style="font-size: 11.5px; color: var(--text-muted);"></span>
+                            <button id="expandUrlCopyAllBtn" class="btn" disabled style="padding: 6px 12px; font-size: 11.5px; margin-left: auto;">
+                                展開後の全URLをコピー
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- RESULTS CONTAINER -->
+                    <div id="expandUrlResultsContainer" style="display: flex; flex-direction: column; gap: 14px;">
+                        <!-- Results cards dynamically injected -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- ==========================================================================
+                 TOOL: YOUTUBE THUMBNAIL EXTRACTOR
+                 ========================================================================== -->
+            <section id="view-yt-thumb" class="tool-view">
+                <div class="panel">
+                    <div class="panel-header">
+                        <h2>YouTube サムネイル一括取得・保存</h2>
+                        <span class="badge">高画質 1080p / 720p 対応</span>
+                    </div>
+                    <p class="mb-3" style="font-size: 12px; color: var(--text-muted);">
+                        YouTube動画、Shorts、Live配信、YouTube MusicなどのURLを入力（または貼り付け）すると、最高画質（1080p/720p/480p）のサムネイル画像を即座に自動抽出します。一括取得、JPG/PNG/WebPダウンロード、クリップボードコピー、ZIPまとめて保存に対応！
+                    </p>
+
+                    <!-- INPUT & CONTROLS -->
+                    <div class="mb-3" style="background-color: var(--bg-panel-secondary); padding: 12px; border-radius: 4px; border: 1px solid var(--border-color);">
+                        <div class="flex-between mb-1">
+                            <label style="font-weight: 700; color: var(--text-heading); font-size: 12.5px; margin: 0;">YouTube URL / 動画ID (複数可・改行区切り)</label>
+                            <div style="display: flex; gap: 6px;">
+                                <button id="ytThumbSampleBtn" class="btn" style="padding: 2px 8px; font-size: 11px;">サンプルURL挿入</button>
+                                <button id="ytThumbClearBtn" class="btn btn-danger" style="padding: 2px 8px; font-size: 11px;">クリア</button>
+                            </div>
+                        </div>
+                        <textarea id="ytThumbInput" style="height: 90px; font-size: 13px; padding: 8px 10px; font-family: monospace;" placeholder="URLまたは動画IDを入力 (例: https://www.youtube.com/watch?v=dQw4w9WgXcQ)..."></textarea>
+                        
+                        <div style="display: flex; gap: 10px; align-items: center; margin-top: 8px; flex-wrap: wrap;">
+                            <button id="ytThumbExtractBtn" class="btn btn-primary" style="padding: 6px 16px; font-size: 12.5px; font-weight: 700;">
+                                サムネイルを取得する
+                            </button>
+                            <span id="ytThumbCountBadge" style="font-size: 11.5px; color: var(--text-muted);"></span>
+                            <div style="margin-left: auto; display: flex; gap: 8px; align-items: center; flex-wrap: wrap;">
+                                <select id="ytThumbZipFormat" class="select" style="padding: 5px 8px; font-size: 11.5px; width: auto;">
+                                    <option value="png" selected>ZIP形式: PNG</option>
+                                    <option value="jpg">ZIP形式: JPG</option>
+                                    <option value="webp">ZIP形式: WebP</option>
+                                </select>
+                                <button id="ytThumbZipAllBtn" class="btn btn-primary" disabled style="padding: 6px 12px; font-size: 11.5px; background-color: var(--accent-purple);">
+                                    全最高画質サムネイルをZIP保存
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RESULTS CONTAINER -->
+                    <div id="ytThumbResultsContainer" style="display: flex; flex-direction: column; gap: 16px;">
+                        <!-- Dynamically generated video cards -->
                     </div>
                 </div>
             </section>
